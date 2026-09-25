@@ -1,0 +1,8 @@
+# One extended regex per line; matched case-insensitively against staged additions.
+# Lines starting with # are comments. Extend per product; never bypass.
+/Users/[a-z]+
+sk-ant-[A-Za-z0-9_-]{8,}
+ghp_[A-Za-z0-9]{20,}
+AKIA[0-9A-Z]{16}
+-----BEGIN [A-Z ]*PRIVATE KEY-----
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl

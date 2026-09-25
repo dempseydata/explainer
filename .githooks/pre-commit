@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse to commit any staged addition matching .githooks/denylist.txt.
+# Enable once per clone: git config core.hooksPath .githooks
+list="$(git rev-parse --show-toplevel)/.githooks/denylist.txt"
+[ -f "$list" ] || { echo "pre-commit: $list missing" >&2; exit 1; }
+patterns=$(grep -Ev '^[[:space:]]*(#|$)' "$list") || exit 0
+hits=$(git diff --cached -U0 --diff-filter=ACMR -- . ':!.githooks/denylist.txt' \
+  | grep -E '^\+[^+]' | grep -Ei "$(printf '%s\n' "$patterns" | paste -sd'|' -)" | head -20) || true
+[ -z "$hits" ] && exit 0
+printf 'pre-commit: staged content matches .githooks/denylist.txt\n%s\n' "$hits" >&2
+exit 1
