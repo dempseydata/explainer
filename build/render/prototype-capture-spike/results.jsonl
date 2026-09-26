@@ -1,0 +1,13 @@
+{"run":"pencil-1w-png-x264-cdp","frames":2250,"unique":993,"setup_s":0.3,"capture_s":81.8,"encode_s":16.9,"total_s":99,"shot_ms_median":64.2,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-2w-png-x264-cdp","frames":2250,"unique":993,"setup_s":0.5,"capture_s":57.3,"encode_s":18.8,"total_s":76.5,"shot_ms_median":77.8,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-4w-png-x264-cdp","frames":2250,"unique":993,"setup_s":0.5,"capture_s":42.8,"encode_s":16.9,"total_s":60.2,"shot_ms_median":111.6,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-6w-png-x264-cdp","frames":2250,"unique":993,"setup_s":0.7,"capture_s":40.8,"encode_s":16.6,"total_s":58.1,"shot_ms_median":147.9,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-8w-png-x264-cdp","frames":2250,"unique":993,"setup_s":0.5,"capture_s":39.1,"encode_s":16.5,"total_s":56.1,"shot_ms_median":190.2,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-6w-jpeg-x264-cdp","frames":2250,"unique":993,"setup_s":0.6,"capture_s":14.9,"encode_s":5.2,"total_s":20.7,"shot_ms_median":47.9,"purity":"skipped (jpeg)","mp4":"2250, 75.000000"}
+{"run":"pencil-6w-png-vt-cdp","frames":2250,"unique":993,"setup_s":0.3,"capture_s":40.6,"encode_s":16.7,"total_s":57.6,"shot_ms_median":152.1,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-6w-jpeg-vt-cdp","frames":2250,"unique":993,"setup_s":0.5,"capture_s":15,"encode_s":6.6,"total_s":22.1,"shot_ms_median":49.5,"purity":"skipped (jpeg)","mp4":"2250, 75.000000"}
+{"run":"pencil-6w-png-x264-pw","frames":2250,"unique":993,"setup_s":0.3,"capture_s":153.5,"encode_s":10.8,"total_s":164.5,"shot_ms_median":720.8,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"pencil-6w-png-x264-cdp-nodedup","frames":2250,"unique":2250,"setup_s":0.3,"capture_s":89.8,"encode_s":36.1,"total_s":126.2,"shot_ms_median":161.6,"purity":"min PSNR inf dB PASS","mp4":"2250 75.000000"}
+{"run":"standard-1w-png-x264-cdp","frames":2250,"unique":469,"setup_s":0.4,"capture_s":17,"encode_s":3.6,"total_s":21,"shot_ms_median":31.6,"purity":"min PSNR 65.6 dB PASS","mp4":"2250 75.000000"}
+{"run":"standard-4w-png-x264-cdp","frames":2250,"unique":469,"setup_s":0.3,"capture_s":5.4,"encode_s":3.6,"total_s":9.3,"shot_ms_median":35.6,"purity":"min PSNR 66.9 dB PASS","mp4":"2250 75.000000"}
+{"run":"standard-1w-png-x264-cdp-nodedup","frames":2250,"unique":2250,"setup_s":0.3,"capture_s":65.4,"encode_s":7.3,"total_s":73,"shot_ms_median":30.4,"purity":"min PSNR 65.3 dB PASS","mp4":"2250 75.000000"}
