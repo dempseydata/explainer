@@ -22,6 +22,7 @@ graphify-out/
 # Per-machine Claude Code state and toolchain inventory
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/worktrees/
 what-is-installed.md
 
 # Rendered explainers — disposable build output, never committed

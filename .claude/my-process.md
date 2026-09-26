@@ -222,4 +222,6 @@ The rows marked *review path* describe a **blended team** — you plus other peo
 
 **Publication model: born public** — this repo *is* the public repo from the first commit; the record is published by design (see the Visibility section of `CLAUDE.md` and `.githooks/`). Phase folders: `background/ideation/` → `background/definition/` → `background/design/` → `build/`; `design/` at the root holds only `tokens.css`.
 
-**Does not apply:** nothing.
+**Does not apply:**
+- **Design** — the product is a set of skills with no UI of its own. Style packs style the rendered output, not the product, and are decided on the wayfinder map, not through the Design flow.
+- **Evaluation** — grounding is enforced deterministically (quotes substring-checked against sources); model judgement is either approved by the author at checkpoints or advisory. The author is the evaluator. Returns if a later phase takes the author out of the loop (Phase 4 automatic regeneration).
