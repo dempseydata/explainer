@@ -40,7 +40,7 @@ A step's actions play in the order listed. Each starts when the previous one's a
 - **The map is a group**, a frame holding the fog patches and the tickets. Being a child issue is shown by position, and the `contains` edge kind is gone. The graph went from 16 nodes and 14 edges to 4 groups, 11 nodes and 6 edges.
 - **`unhighlight` and `pause` are gone.** Emphasis that should last is a state; a pause is a step with no actions.
 - **Layout covers every element ever revealed, not the final frame.** Sessions and subagents are hidden by the end but need positions.
-- **Timing depends on the pack.** A script can fit its durations in the standard pack and overrun in pencil, where reveals draw on. The overrun check reports against a named pack.
+- **Timing depends on the pack.** A script can fit its durations in the standard pack and overrun in pencil, where reveals draw on. The overrun check runs against a named pack; ADR-0004 makes it a validation rejection with a suggested `duration_s`.
 - **Invented instance labels cannot be cited.** "Grill: scope" appears in no source, so the example labels its tickets by type. This is a rule for the scripting skill, not the schema.
 - **Typographic folding is required, not cosmetic.** The Latent Space extract uses curly apostrophes, so a quote typed with a straight one failed.
 - **The example survives.** `script.yaml` becomes M1's hand-written example and M6's baseline for "an equivalent script". The prototype checker dies; M1 builds the validator test-first in Node. M1 vendors the pinned `SKILL.md` under `examples/wayfinder/sources/` with its MIT notice.

@@ -31,3 +31,7 @@ _Avoid_: region, cluster, tag
 **Citation**:
 A source id and a verbatim quote, checked against that source's stored extract. The quote is the proof; a source id alone proves only that a source was named.
 _Avoid_: reference, footnote
+
+**Finding**:
+Something the pre-capture checks report against one render: a label under the x-height floor, or an overlap. A finding stops capture unless the author accepts it; it is never fixed by the renderer.
+_Avoid_: warning, error, issue

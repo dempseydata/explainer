@@ -16,7 +16,7 @@ Each of these moved the measured time by 2× or more, or broke correctness, so t
 - **Pencil packs may not use rough.js `fillStyle: 'dots'`** (4.6.6). It calls `Math.random()` and ignores `seed`, so `seek(t)` stops being pure: frames diverged visibly, at 31 dB. It is also the costliest fill, at one path per dot. Every other fill style routes through the seeded randomiser.
 - **Purity is a standing test with a tolerance, not byte equality.** Seeking a cold page straight to `t` must match a sequentially reached `t` at ≥ 50 dB PSNR. Identical scenes differ by raster noise at 65–85 dB; real drift showed at about 31 dB.
 - **The encode uses the concat demuxer with `-frames:v N`, never `-t`.** `-t` silently truncated a 6.5 s final hold.
-- **Geometric checks should run on the player's DOM before capture, not after it.** They read `getBBox()` and need no pixels. The brief's order (capture, then checks with up to 2 fix loops) would allow three captures per render.
+- **Geometric checks should run on the player's DOM before capture, not after it.** They read `getBBox()` and need no pixels. The brief's order (capture, then checks with up to 2 fix loops) would allow three captures per render. Decided in ADR-0004: they do, and a render captures once.
 
 ## Considered options
 
