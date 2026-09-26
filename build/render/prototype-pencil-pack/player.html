@@ -19,12 +19,6 @@
       <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" seed="7"/>
       <feColorMatrix id="paperTint" values=""/>
     </filter>
-    <!-- graphite smudge: a dense scribble, pushed around by noise, then softened -->
-    <filter id="smudge" x="-10%" y="-10%" width="120%" height="120%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="3" result="n"/>
-      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G"/>
-      <feGaussianBlur stdDeviation="3.6"/>
-    </filter>
   </defs>
   <rect id="bg" width="1920" height="1080" filter="url(#paper)"/>
   <g id="groups"></g><g id="edges"></g><g id="nodes"></g><g id="fx"></g>
@@ -43,6 +37,9 @@ const LOOKS = {
   B: { name: 'Coloured pencils', font: 'Kalam', size: 31,
        tokens: { ...BASE, accent: '#2f2f31', grilling: '#2f6db3', prototype: '#c46a1b', research: '#3f7f3a', task: '#7d4f9a' },
        typeFill: 'colour', stateAs: 'marks', groupHl: 'underline' },
+  D: { name: 'Coloured pencils, red accent', font: 'Kalam', size: 31,
+       tokens: { ...BASE, accent: '#b3261e', grilling: '#2f6db3', prototype: '#c9962a', research: '#3f7f3a', task: '#7d4f9a' },
+       typeFill: 'colour', stateAs: 'marks', groupHl: 'retrace' },
   C: { name: 'Glyph for type, fill for state', font: 'Caveat', size: 44,
        tokens: { ...BASE, accent: '#1f5fa8' },
        typeFill: 'none', stateAs: 'fill', groupHl: 'retrace' },
@@ -173,12 +170,7 @@ function redraw() {
       else { r.hl.appendChild(rc.line(o.x + 22, o.y + 70, o.x + 360, o.y + 68, { seed: seed(k('hl')), stroke: T.accent, strokeWidth: 3.5, roughness: 1.8 }));
              r.hl.appendChild(rc.line(o.x + 30, o.y + 78, o.x + 330, o.y + 77, { seed: seed(k('hl2')), stroke: T.accent, strokeWidth: 2.5, roughness: 2 })); }
     } else if (o.type === 'fog') {
-      r.outline = layer(r.g); r.outline.appendChild(rc.rectangle(o.x, o.y, o.w, o.h, { seed: seed(k('o')), stroke: T.faint, strokeWidth: 1.4, strokeLineDash: [10, 12], roughness: 1.5 }));
-      // the smudge does not boil: it is soft already, and a static filter keeps capture cheap
-      r.smudge = layer(r.g); r.smudge.setAttribute('filter', 'url(#smudge)');
-      const save = TICK; TICK = 0;
-      r.smudge.appendChild(rc.rectangle(o.x + 20, o.y + 20, o.w - 40, o.h - 40, { seed: seed(k('s')), stroke: 'none', fill: T.fog, fillStyle: 'cross-hatch', hachureGap: 5, fillWeight: 3, roughness: 3.5, hachureAngle: -30 }));
-      TICK = save;
+      r.outline = layer(r.g); r.outline.appendChild(rc.rectangle(o.x, o.y, o.w, o.h, { seed: seed(k('o')), stroke: T.faint, strokeWidth: 2.2, strokeLineDash: [2, 10], roughness: 0.8 }));
     } else if (o.kind === 'edge') {
       const opt = { seed: seed(k('e')), stroke: T.line, roughness: 1.2 };
       if (o.type === 'blocks') Object.assign(opt, { strokeWidth: 2.6 });
@@ -257,7 +249,6 @@ function seek(t) {
     for (const key of ['label', 'glyph']) if (r[key]) r[key].setAttribute('opacity', Math.max(0, rp * 2 - 1));   // lettering lands in the second half
     // persistent state: the new state's layer draws on, the previous one fades
     const ss = past(id, t, e => e.verb === 'set_state'), cur = ss.at(-1), prev = ss.at(-2), sp = prog(cur, t);
-    if (o.type === 'fog') r.smudge.setAttribute('opacity', 0.5 * (cur?.state === 'fogged' ? sp : prev?.state === 'fogged' ? 1 - sp : 0));
     for (const s in r.state || {}) {
       const on = cur?.state === s ? sp : prev?.state === s && cur ? 1 - sp : 0;
       r.state[s].setAttribute('opacity', on > 0 ? (cur?.state === s ? 1 : on) : 0);
