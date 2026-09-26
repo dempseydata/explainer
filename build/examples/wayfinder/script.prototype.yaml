@@ -1,0 +1,195 @@
+# PROTOTYPE — throwaway. Hand-written against script schema v0.1 exactly as drafted in
+# background/ideation/brief.md, to find where it bends. Every "# BEND Bn" marks a place
+# the draft schema could not express the story and the script improvises.
+# Check: uv run --with pyyaml python build/examples/wayfinder/prototype-check.py
+
+meta:
+  schema: 0.1
+  title: How Wayfinder charts a big project
+  audience: PMs and engineers new to agent skills
+  outcome: Viewer understands map, ticket types, blocking and the frontier
+  duration_s: 75
+
+sources:
+  - id: skillmd
+    title: wayfinder SKILL.md (mattpocock/skills, MIT)
+    url: https://github.com/mattpocock/skills/blob/ed37663/skills/engineering/wayfinder/SKILL.md
+    path: local-data/wayfinder/skillmd.md   # brief: vendored under examples/wayfinder/sources/
+    version: ed37663
+    fetched: 2026-09-26
+  - id: aihero
+    title: The /wayfinder Skill — AI Hero
+    url: https://www.aihero.dev/skills-wayfinder
+    path: local-data/wayfinder/aihero.txt   # BEND B10: gitignored extract named from a committed file
+    fetched: 2026-09-26
+  - id: latent
+    title: "The /wayfinder Skill: Navigating the Fog of War of Planning — Latent Space"
+    url: https://www.latent.space/p/wayfinder-skill
+    path: local-data/wayfinder/latent.txt
+    fetched: 2026-09-26
+
+graph:
+  node_types: [goal, region, hub, ticket.grilling, ticket.prototype, ticket.research, ticket.task, session, subagent]
+  edge_kinds: [contains, blocks, works, flow]
+  states: [fogged, clear, frontier, claimed, resolved]   # BEND B6: "clear" exists only to undo "fogged"
+
+  nodes:
+    - id: goal
+      type: goal
+      label: Destination
+      cite: {src: skillmd, quote: "naming it is the first act of charting"}
+    # BEND B1: "The way there" is a region *node*, its fog patches are region nodes tagged
+    # group: route, and tickets are tagged group: r1..r3. Three containment mechanisms
+    # (region type, group tag, contains edge) and none says "this sits inside that".
+    - id: route
+      type: region
+      label: The way there
+      cite: {src: skillmd, quote: "the way from here to the destination isn't visible yet"}
+    - {id: r1, type: region, group: route, label: Fog of war, cite: {src: skillmd, quote: "Beyond the live tickets lies the fog of war"}}
+    - {id: r2, type: region, group: route, label: Fog of war, cite: {src: skillmd, quote: "Beyond the live tickets lies the fog of war"}}
+    - {id: r3, type: region, group: route, label: Fog of war, cite: {src: skillmd, quote: "Beyond the live tickets lies the fog of war"}}
+    - id: map
+      type: hub
+      label: "Map · wayfinder:map"
+      cite: {src: skillmd, quote: "The map is a single issue on this repo's issue tracker, labelled `wayfinder:map`"}
+
+    # BEND B8: labels are the ticket type, not an invented topic ("Grill: scope" is in no source).
+    - {id: t1, type: ticket.grilling,  group: r1, label: Grilling,  cite: {src: skillmd, quote: "Conversation via the /grilling and /domain-modeling skills"}}
+    - {id: t2, type: ticket.research,  group: r1, label: Research,  cite: {src: skillmd, quote: "Reading documentation, third-party APIs"}}
+    - {id: t3, type: ticket.prototype, group: r1, label: Prototype, cite: {src: skillmd, quote: "making a cheap, rough, concrete artifact to react to"}}
+    - {id: t4, type: ticket.task,      group: r1, label: Task,      cite: {src: skillmd, quote: "Manual work that must happen before a decision can be made"}}
+    - {id: t5, type: ticket.grilling,  group: r2, label: Grilling,  cite: {src: skillmd, quote: "Conversation via the /grilling and /domain-modeling skills"}}
+    - {id: t6, type: ticket.prototype, group: r2, label: Prototype, cite: {src: skillmd, quote: "making a cheap, rough, concrete artifact to react to"}}
+    - {id: t7, type: ticket.grilling,  group: r3, label: Grilling,  cite: {src: skillmd, quote: "Conversation via the /grilling and /domain-modeling skills"}}
+    - {id: t8, type: ticket.research,  group: r3, label: Research,  cite: {src: skillmd, quote: "Reading documentation, third-party APIs"}}
+
+    # BEND B9: transient nodes. Hidden by the end, so absent from the "final graph" ELK lays out.
+    - {id: s1,  type: session,  label: Session,  cite: {src: skillmd, quote: "A session claims a ticket by assigning it"}}
+    - {id: sa1, type: subagent, label: Subagent, cite: {src: skillmd, quote: "Resolved by a /research subagent"}}
+
+  # BEND B2: edges carry no id in v0.1, so no step can reveal, highlight or hide one.
+  # Every id below is improvised.
+  edges:
+    - {id: c1, from: map, to: t1, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c2, from: map, to: t2, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c3, from: map, to: t3, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c4, from: map, to: t4, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c5, from: map, to: t5, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c6, from: map, to: t6, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c7, from: map, to: t7, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: c8, from: map, to: t8, kind: contains, cite: {src: skillmd, quote: "Its tickets are child issues of the map."}}
+    - {id: b1, from: t1, to: t3, kind: blocks, cite: {src: skillmd, quote: "Blocking uses the tracker's native dependency relationship"}}
+    - {id: b2, from: t2, to: t3, kind: blocks, cite: {src: skillmd, quote: "Blocking uses the tracker's native dependency relationship"}}
+    - {id: b3, from: t5, to: t6, kind: blocks, cite: {src: skillmd, quote: "Blocking uses the tracker's native dependency relationship"}}
+    - {id: w1, from: sa1, to: t2, kind: works, cite: {src: skillmd, quote: "Resolved by a /research subagent"}}
+    - {id: w2, from: s1, to: t1, kind: works, cite: {src: skillmd, quote: "A session claims a ticket by assigning it"}}
+    - {id: h1, from: map, to: goal, kind: flow, cite: {src: aihero, quote: "When the map clears, wayfinder hands off"}}
+
+steps:
+  # 1 — destination clear, route fogged
+  - actions:
+      - {reveal: [goal, route, r1, r2, r3]}
+      - {set_state: {target: [r1, r2, r3], state: fogged}}   # BEND B3: v0.1 form {id: state} cannot take a list
+    narration: "You can name the destination, but not the route — and it's too big for one agent session."
+    duration_s: 6
+    cite: {src: aihero, quote: "an effort too big for one agent session: an idea whose destination you can name but whose route you cannot yet see"}
+
+  # 2 — the map
+  - actions:
+      - {reveal: map}
+      - {annotate: {map: "One issue on your tracker"}}      # BEND B5: uncited on-screen text; lifetime undefined
+    narration: "Wayfinder charts it as a map: a single issue on your tracker, labelled wayfinder:map."
+    duration_s: 6
+    cite: {src: skillmd, quote: "The map is a single issue on this repo's issue tracker, labelled `wayfinder:map`"}
+
+  # 3 — first tickets, typed, as children
+  - actions:
+      - {set_state: {r1: clear}}
+      - {reveal: [t1, t2, t3, t4]}
+      - {reveal: [c1, c2, c3, c4]}                           # BEND B2 (edge ids)
+    narration: "Its first tickets are child issues of the map, each typed: grilling, prototype, research or task."
+    duration_s: 7
+    cite:                                                    # BEND B4: two claims need two quotes
+      - {src: skillmd, quote: "Its tickets are child issues of the map."}
+      - {src: skillmd, quote: "Each ticket carries a `wayfinder:<type>` label — one of `research`, `prototype`, `grilling`, `task`"}
+
+  # 4 — blocking and the frontier
+  - actions:
+      - {reveal: [b1, b2]}
+      - {set_state: {target: [t1, t2, t4], state: frontier}}
+    narration: "Blocking edges order them. The open, unblocked, unclaimed tickets are the frontier."
+    duration_s: 7
+    cite:
+      - {src: skillmd, quote: "Blocking uses the tracker's native dependency relationship"}
+      - {src: skillmd, quote: "the frontier is the open, unblocked, unclaimed children"}
+
+  # 5 — research runs in parallel on subagents
+  - actions:
+      - {reveal: [sa1, w1]}
+      - {set_state: {t2: claimed}}
+    narration: "Research is the one exception to one ticket per session: subagents resolve it in parallel."
+    duration_s: 6
+    cite:
+      - {src: aihero, quote: "Research is the only exception to one ticket per session."}
+      - {src: skillmd, quote: "spin up a `/research` subagent to resolve it in parallel"}
+
+  # 6 — a session claims one frontier ticket
+  - actions:
+      - {reveal: [s1, w2]}
+      - {set_state: {t1: claimed}}
+    narration: "A session claims one frontier ticket by assigning it, before any work."
+    duration_s: 6
+    cite: {src: skillmd, quote: "A session claims a ticket by assigning it to the dev driving the map, first, before any work"}
+
+  # 7 — resolve and gist
+  - actions:
+      - {set_state: {target: [t1, t2], state: resolved}}
+      - {hide: [s1, sa1, w1, w2]}
+      - {highlight: map}                                     # BEND B7: persistent until unhighlight?
+    narration: "Each resolves into a decision, gisted on the map in one line."
+    duration_s: 7
+    cite: {src: aihero, quote: "Decisions so far: one line per closed ticket"}
+
+  # 8 — fog lifts, new tickets graduate
+  - actions:
+      - {set_state: {r2: clear}}
+      - {reveal: [t5, t6, c5, c6, b3]}
+      - {set_state: {target: [t3, t5], state: frontier}}
+    narration: "Resolving clears the fog ahead, and what is now specifiable graduates into new tickets."
+    duration_s: 7
+    cite: {src: skillmd, quote: "Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets"}
+
+  # 9 — again, faster
+  - actions:
+      - {set_state: {target: [t3, t4, t5], state: resolved}}
+      - {highlight: map}
+    narration: "Unblocked tickets can run in parallel sessions."
+    duration_s: 5
+    cite: {src: skillmd, quote: "The user may run unblocked tickets in parallel"}
+
+  - actions:
+      - {set_state: {r3: clear}}
+      - {reveal: [t7, t8, c7, c8]}
+      - {set_state: {target: [t6, t7, t8], state: frontier}}
+    narration: "Each decision pushes the fog further out, toward the destination."
+    duration_s: 5
+    cite: {src: latent, quote: "those certain decisions sort of lead you there and push further out into the fog of war"}
+
+  # 11 — nothing left to decide
+  - actions:
+      - {set_state: {target: [t6, t7, t8], state: resolved}}
+      - {highlight: map}
+    narration: "Until nothing is left to decide."
+    duration_s: 4
+    cite: {src: aihero, quote: "the map is finished when nothing is left to decide before someone goes and builds the thing"}
+
+  # 12 — hand off
+  - actions:
+      - {reveal: h1}
+      - {highlight: goal}
+      - {annotate: {goal: "Next: a spec, not code"}}
+    narration: "Then Wayfinder hands off to a spec. It plans; it does not build."
+    duration_s: 8
+    cite:
+      - {src: aihero, quote: "When the map clears, wayfinder hands off; it does not carry on into code."}
+      - {src: aihero, quote: "It plans, it does not do."}
