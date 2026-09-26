@@ -1,0 +1,516 @@
+{
+ "size": {
+  "w": 3343,
+  "h": 634
+ },
+ "groups": [
+  {
+   "id": "map",
+   "type": "map",
+   "label": "Map · wayfinder:map",
+   "x": 489,
+   "y": 24,
+   "w": 2546,
+   "h": 598
+  },
+  {
+   "id": "r1",
+   "type": "fog",
+   "parent": "map",
+   "x": 518,
+   "y": 102,
+   "w": 954,
+   "h": 496
+  },
+  {
+   "id": "r2",
+   "type": "fog",
+   "parent": "map",
+   "x": 1528,
+   "y": 102,
+   "w": 954,
+   "h": 496
+  },
+  {
+   "id": "r3",
+   "type": "fog",
+   "parent": "map",
+   "x": 2538,
+   "y": 102,
+   "w": 473,
+   "h": 496
+  }
+ ],
+ "nodes": [
+  {
+   "id": "goal",
+   "type": "goal",
+   "label": "Destination",
+   "x": 3091,
+   "y": 12,
+   "w": 240,
+   "h": 180
+  },
+  {
+   "id": "t1",
+   "type": "ticket.grilling",
+   "group": "r1",
+   "label": "Grilling",
+   "x": 542,
+   "y": 358,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t2",
+   "type": "ticket.research",
+   "group": "r1",
+   "label": "Research",
+   "x": 542,
+   "y": 482,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t3",
+   "type": "ticket.prototype",
+   "group": "r1",
+   "label": "Prototype",
+   "x": 1023,
+   "y": 373.33333333333337,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t4",
+   "type": "ticket.task",
+   "group": "r1",
+   "label": "Task",
+   "x": 542,
+   "y": 234,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t5",
+   "type": "ticket.grilling",
+   "group": "r2",
+   "label": "Grilling",
+   "x": 1552,
+   "y": 188,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t6",
+   "type": "ticket.prototype",
+   "group": "r2",
+   "label": "Prototype",
+   "x": 2033,
+   "y": 188,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t7",
+   "type": "ticket.grilling",
+   "group": "r3",
+   "label": "Grilling",
+   "x": 2562,
+   "y": 126,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "t8",
+   "type": "ticket.research",
+   "group": "r3",
+   "label": "Research",
+   "x": 2562,
+   "y": 250,
+   "w": 425,
+   "h": 92
+  },
+  {
+   "id": "s1",
+   "type": "session",
+   "label": "Session",
+   "x": 12,
+   "y": 358,
+   "w": 416,
+   "h": 92
+  },
+  {
+   "id": "sa1",
+   "type": "subagent",
+   "label": "Subagent",
+   "x": 12,
+   "y": 482,
+   "w": 416,
+   "h": 92
+  }
+ ],
+ "edges": [
+  {
+   "id": "b1",
+   "from": "t1",
+   "to": "t3",
+   "kind": "blocks",
+   "pts": [
+    [
+     967,
+     404
+    ],
+    [
+     1023,
+     404
+    ]
+   ]
+  },
+  {
+   "id": "b2",
+   "from": "t2",
+   "to": "t3",
+   "kind": "blocks",
+   "pts": [
+    [
+     967,
+     528
+    ],
+    [
+     977,
+     528
+    ],
+    [
+     977,
+     434.6666666666667
+    ],
+    [
+     1023,
+     434.6666666666667
+    ]
+   ]
+  },
+  {
+   "id": "b3",
+   "from": "t5",
+   "to": "t6",
+   "kind": "blocks",
+   "pts": [
+    [
+     1977,
+     234
+    ],
+    [
+     2033,
+     234
+    ]
+   ]
+  },
+  {
+   "id": "w1",
+   "from": "sa1",
+   "to": "t2",
+   "kind": "works",
+   "pts": [
+    [
+     428,
+     528
+    ],
+    [
+     542,
+     528
+    ]
+   ]
+  },
+  {
+   "id": "w2",
+   "from": "s1",
+   "to": "t1",
+   "kind": "works",
+   "pts": [
+    [
+     428,
+     404
+    ],
+    [
+     542,
+     404
+    ]
+   ]
+  },
+  {
+   "id": "h1",
+   "from": "map",
+   "to": "goal",
+   "kind": "handoff",
+   "pts": [
+    [
+     3035,
+     102
+    ],
+    [
+     3091,
+     102
+    ]
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "d": 6,
+   "a": [
+    {
+     "reveal": [
+      "goal",
+      "r1",
+      "r2",
+      "r3"
+     ]
+    },
+    {
+     "set_state": {
+      "target": [
+       "r1",
+       "r2",
+       "r3"
+      ],
+      "state": "fogged"
+     }
+    }
+   ],
+   "narration": "You can name the destination, but not the route — and it's too big for one agent session."
+  },
+  {
+   "d": 6,
+   "a": [
+    {
+     "reveal": "map"
+    },
+    {
+     "annotate": {
+      "target": "map",
+      "text": "One issue on your tracker"
+     }
+    }
+   ],
+   "narration": "Wayfinder charts it as a map: a single issue on your tracker, labelled wayfinder:map."
+  },
+  {
+   "d": 7,
+   "a": [
+    {
+     "set_state": {
+      "target": "r1",
+      "state": "clear"
+     }
+    },
+    {
+     "reveal": [
+      "t1",
+      "t2",
+      "t3",
+      "t4"
+     ]
+    }
+   ],
+   "narration": "Its first tickets are child issues of the map, each typed: grilling, prototype, research or task."
+  },
+  {
+   "d": 7,
+   "a": [
+    {
+     "reveal": [
+      "b1",
+      "b2"
+     ]
+    },
+    {
+     "set_state": {
+      "target": [
+       "t1",
+       "t2",
+       "t4"
+      ],
+      "state": "frontier"
+     }
+    }
+   ],
+   "narration": "Blocking edges order them. The open, unblocked, unclaimed tickets are the frontier."
+  },
+  {
+   "d": 6,
+   "a": [
+    {
+     "reveal": [
+      "sa1",
+      "w1"
+     ]
+    },
+    {
+     "set_state": {
+      "target": "t2",
+      "state": "claimed"
+     }
+    }
+   ],
+   "narration": "Research is the one exception to one ticket per session: subagents resolve it in parallel."
+  },
+  {
+   "d": 6,
+   "a": [
+    {
+     "reveal": [
+      "s1",
+      "w2"
+     ]
+    },
+    {
+     "set_state": {
+      "target": "t1",
+      "state": "claimed"
+     }
+    }
+   ],
+   "narration": "A session claims one frontier ticket by assigning it, before any work."
+  },
+  {
+   "d": 7,
+   "a": [
+    {
+     "set_state": {
+      "target": [
+       "t1",
+       "t2"
+      ],
+      "state": "resolved"
+     }
+    },
+    {
+     "hide": [
+      "s1",
+      "sa1",
+      "w1",
+      "w2"
+     ]
+    },
+    {
+     "highlight": "map"
+    }
+   ],
+   "narration": "Each resolves into a decision, gisted on the map in one line."
+  },
+  {
+   "d": 7,
+   "a": [
+    {
+     "set_state": {
+      "target": "r2",
+      "state": "clear"
+     }
+    },
+    {
+     "reveal": [
+      "t5",
+      "t6",
+      "b3"
+     ]
+    },
+    {
+     "set_state": {
+      "target": [
+       "t3",
+       "t5"
+      ],
+      "state": "frontier"
+     }
+    }
+   ],
+   "narration": "Resolving clears the fog ahead, and what is now specifiable graduates into new tickets."
+  },
+  {
+   "d": 5,
+   "a": [
+    {
+     "set_state": {
+      "target": [
+       "t3",
+       "t4",
+       "t5"
+      ],
+      "state": "resolved"
+     }
+    },
+    {
+     "highlight": "map"
+    }
+   ],
+   "narration": "Unblocked tickets can run in parallel sessions."
+  },
+  {
+   "d": 5,
+   "a": [
+    {
+     "set_state": {
+      "target": "r3",
+      "state": "clear"
+     }
+    },
+    {
+     "reveal": [
+      "t7",
+      "t8"
+     ]
+    },
+    {
+     "set_state": {
+      "target": [
+       "t6",
+       "t7",
+       "t8"
+      ],
+      "state": "frontier"
+     }
+    }
+   ],
+   "narration": "Each decision pushes the fog further out, toward the destination."
+  },
+  {
+   "d": 4,
+   "a": [
+    {
+     "set_state": {
+      "target": [
+       "t6",
+       "t7",
+       "t8"
+      ],
+      "state": "resolved"
+     }
+    },
+    {
+     "highlight": "map"
+    }
+   ],
+   "narration": "Until nothing is left to decide."
+  },
+  {
+   "d": 8,
+   "a": [
+    {
+     "reveal": "h1"
+    },
+    {
+     "highlight": "goal"
+    },
+    {
+     "annotate": {
+      "target": "goal",
+      "text": "Next: a spec, not code"
+     }
+    }
+   ],
+   "narration": "Then Wayfinder hands off to a spec. It plans; it does not build."
+  }
+ ]
+}
