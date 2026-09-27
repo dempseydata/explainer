@@ -22,7 +22,7 @@ before(async () => {
   fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
   const { code, report } = await main(['render', path.join(root, 'explainers', 'wayfinder', 'script.yaml'), '--pack', 'standard']);
   assert.equal(code, 0, JSON.stringify(report.errors));
-  url = pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href;
+  url = `${pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href}?bare`; // the frame alone, as capture loads it
   lay = JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8'));
   browser = await chromium.launch();
 });
@@ -68,6 +68,28 @@ test('render plays all 12 Wayfinder steps, and nothing moves between steps', asy
 
 const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));
 
+test('at every step\'s rest, the caption shows that step\'s narration in the pack\'s face, inside the band, in at most two lines', async () => {
+  const page = await open();
+  for (const [i, t] of rests.entries()) {
+    const caption = await page.evaluate(t => {
+      seek(t);
+      const e = document.querySelector('#frame [data-caption]');
+      const lines = [...e.querySelectorAll('tspan')].map(s => s.textContent);
+      const box = e.getBBox();
+      const cs = getComputedStyle(e);
+      return { lines, top: box.y, bottom: box.y + box.height, left: box.x, right: box.x + box.width,
+        loaded: document.fonts.check(`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`), family: cs.fontFamily };
+    }, t);
+    assert.equal(caption.lines.join(' '), script.steps[i].narration, `step ${i + 1}: caption text`);
+    assert.ok(caption.lines.length <= 2, `step ${i + 1}: ${caption.lines.length} lines`);
+    assert.match(caption.family, /Inter/);
+    assert.ok(caption.loaded, `step ${i + 1}: the caption's face is loaded`);
+    assert.ok(caption.top >= 1080 - pack.caption.band_px && caption.bottom <= 1080, `step ${i + 1}: caption spans y ${caption.top}–${caption.bottom}`);
+    assert.ok(caption.left >= 0 && caption.right <= 1920, `step ${i + 1}: caption spans x ${caption.left}–${caption.right}`);
+  }
+  await page.close();
+});
+
 // Layout (#19): the x-height floor and ceiling are rendered pixels at 1080p (ADR-0003).
 const X_HEIGHT = { floor: 16, ceiling: 32 };
 
@@ -87,7 +109,8 @@ test('at every step, every label\'s x-height lies between the floor and the ceil
         // Font sizes are in the frame's viewBox units, which are 1080p pixels at any viewport.
         return { text: e.textContent, x: ctx.measureText('x').actualBoundingBoxAscent };
       });
-      const drawn = [...document.querySelectorAll('#frame *')].filter(e => e instanceof SVGGraphicsElement && !(e instanceof SVGGElement) && shown(e));
+      // The band is the caption's own; everything else is the diagram.
+      const drawn = [...document.querySelectorAll('#frame *')].filter(e => e instanceof SVGGraphicsElement && !(e instanceof SVGGElement) && !e.closest('[data-caption]') && shown(e));
       const bottom = Math.max(...drawn.map(e => (e.getBoundingClientRect().bottom - frame.top) / scale));
       return { labels, bottom };
     }, t);
@@ -242,5 +265,30 @@ test('purity holds for the Wayfinder render: a cold seek to t matches a sequenti
     const db = psnr(await cold.screenshot({ type: 'png' }), sequential[f]);
     assert.ok(db >= 50, `frame ${f}: ${db} dB`);
     await cold.close();
+  }
+});
+
+test('the page never scrolls: the frame stays in view at 1440×600 and at 700 px wide, and only the transcript scrolls to keep the current line in view', async () => {
+  for (const viewport of [{ width: 1440, height: 600 }, { width: 700, height: 600 }]) {
+    const page = await browser.newPage({ viewport });
+    await page.goto(url.replace('?bare', ''));
+    const at = `${viewport.width}×${viewport.height}`;
+    const rect = selector => page.locator(selector).evaluate(e => e.getBoundingClientRect().toJSON());
+    const lineInView = i => page.locator('#transcript li').nth(i).evaluate(li => {
+      const [r, list] = [li.getBoundingClientRect(), li.parentElement.getBoundingClientRect()];
+      return r.top >= list.top - 0.5 && r.bottom <= list.bottom + 0.5;
+    });
+    const last = script.steps.length - 1;
+    assert.equal(await lineInView(last), false, `${at}: the last line starts out of view`);
+    await page.keyboard.press('End');
+    assert.equal(await lineInView(last), true, `${at}: End brings the last line into view`);
+    assert.deepEqual(await page.locator('#transcript [aria-current="step"]').allInnerTexts(), [script.steps[last].narration]);
+    const frame = await rect('#frame');
+    assert.ok(frame.top >= 0 && frame.left >= 0 && frame.bottom <= viewport.height && frame.right <= viewport.width, `${at}: frame at ${JSON.stringify(frame)}`);
+    const transcript = await rect('#transcript');
+    assert.ok(viewport.width < 800 ? transcript.top >= frame.bottom : transcript.left >= frame.right, `${at}: the transcript sits ${viewport.width < 800 ? 'under' : 'beside'} the frame`);
+    assert.deepEqual(await page.evaluate(() => [scrollX, scrollY, document.documentElement.scrollWidth, document.documentElement.scrollHeight]),
+      [0, 0, viewport.width, viewport.height], `${at}: the page does not scroll`);
+    await page.close();
   }
 });

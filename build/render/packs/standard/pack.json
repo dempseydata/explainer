@@ -21,7 +21,7 @@
     "files": { "400": "fonts/inter-latin-400-normal.woff2", "600": "fonts/inter-latin-600-normal.woff2" },
     "text": "ink"
   },
-  "caption": { "band_px": 150 },
+  "caption": { "band_px": 150, "font_px": 40, "line_px": 52, "weight": 400 },
   "licences": [
     { "assets": "Inter", "licence": "OFL-1.1", "file": "licences/Inter-OFL.txt" },
     { "assets": "Lucide", "licence": "ISC AND MIT", "file": "licences/Lucide-LICENSE.txt" }

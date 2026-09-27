@@ -496,6 +496,7 @@ function playerHtml(script, pack, lay) {
     nodes: script.graph.nodes.map(n => ({ ...lay.nodes[n.id], id: n.id, type: n.type, label: n.label })),
     edges: (script.graph.edges ?? []).map(e => ({ ...lay.edges[e.id], id: e.id, kind: e.kind })),
     annotations: lay.annotations,
+    narration: script.steps.map(s => s.narration),
     ...timeline(script, pack),
   };
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
@@ -505,12 +506,12 @@ function playerHtml(script, pack, lay) {
   return `<!doctype html>
 ${notices}
 <html lang="en"><head><meta charset="utf-8"><title></title>
-<style>${fontFaces(pack)}:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}</style>
+<style>${fontFaces(pack)}:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}#frame{background:var(--${pack.ground})}</style>
 </head><body>
 <svg id="frame" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FRAME.width} ${FRAME.height}"></svg>
 <script>const DATA=${json};
 ${fs.readFileSync(path.join(__dirname, 'player.js'), 'utf8')}</script>
-</body></html>
+${fs.readFileSync(path.join(__dirname, 'controls.html'), 'utf8')}</body></html>
 `;
 }
 

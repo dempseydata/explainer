@@ -145,6 +145,28 @@ for (const [key, a] of Object.entries(DATA.annotations)) {
 
 DATA.events.forEach((e, i) => elements[e.id].events.push(i));
 
+// The caption band (ADR-0007): the current step's narration, centred in the band at the frame's foot, in the pack's
+// face. Wrapped greedily to the frame's width less its margins, measured in the face; the check pass reports a third line.
+const C = pack.caption;
+const caption = add('text', {
+  'data-caption': '', 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-family': pack.face.family,
+  'font-size': C.font_px, 'font-weight': C.weight, fill: paint(pack.face.text),
+});
+function setCaption(words) {
+  caption.textContent = '';
+  const probe = add('tspan', {}, caption);
+  const lines = [''];
+  for (const w of words.split(' ')) {
+    const line = lines.at(-1) ? `${lines.at(-1)} ${w}` : w;
+    probe.textContent = line;
+    if (lines.at(-1) && probe.getComputedTextLength() > DATA.frame.width - 2 * L.margin_px) lines.push(w);
+    else lines[lines.length - 1] = line;
+  }
+  caption.textContent = '';
+  const top = DATA.frame.height - C.band_px / 2 - (lines.length - 1) * C.line_px / 2;
+  lines.forEach((line, k) => { add('tspan', { x: DATA.frame.width / 2, y: top + k * C.line_px }, caption).textContent = line; });
+}
+
 // Each event's drawn value at t, quantised so the key and the drawing agree. Persistent verbs ease out and hold;
 // transient ones (highlight, annotate) hold only through their own step.
 const ease = p => 1 - (1 - p) ** 3;
@@ -163,12 +185,14 @@ function values(t) {
   });
 }
 
+// The caption changes only at a step boundary, so the step term covers it.
 function frameKey(t) {
-  return values(t).join(',');
+  return `${stepAt(t)}|${values(t).join(',')}`;
 }
 
 function seek(t) {
   const v = values(t);
+  setCaption(DATA.narration[stepAt(t)]);
   const from = pack.verbs.reveal?.scale_from ?? 1;
   for (const el of Object.values(elements)) {
     let opacity = 0, scale = 1, cur, prev, hl;
