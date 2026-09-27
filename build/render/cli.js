@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The explainer CLI. Commands: validate <script>, render <script> --pack <name>, fetch <url> <extract-path> [--overwrite].
 // The machine-readable report goes to stdout as JSON; human-readable lines go to stderr.
-// Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 70 internal error (e.g. a pack that does not map the script).
+// validate --pack <name> also checks the pack maps the script and that no step overruns in it; render always does.
+// Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 70 internal error.
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
@@ -21,9 +22,9 @@ const normalise = text => text.replace(/[*_`]/g, '').replace(/[\u2018\u2019]/g, 
 // A script lives at <root>/explainers/<slug>/script.yaml; its extracts and renders under <root>/local-data/<slug>/ (#8).
 const rootOf = file => path.resolve(path.dirname(file), '../..');
 
-// Checks every rule of schema v0.1 (ADR-0002) plus reveal coverage (ADR-0005).
+// Checks every rule of schema v0.1 (ADR-0002) plus reveal coverage (ADR-0005); with a pack, its coverage and overrun.
 // With draft, steps may be absent and the draft: block is ignored.
-function validate(file, { draft = false } = {}) {
+function validate(file, { draft = false, pack } = {}) {
   const lineCounter = new LineCounter();
   const doc = parseDocument(fs.readFileSync(file, 'utf8'), { lineCounter });
   if (doc.errors.length) {
@@ -110,6 +111,36 @@ function validate(file, { draft = false } = {}) {
         if (!revealed.has(el.id)) errors.push(located(['graph', section, i], `${section.slice(0, -1)} ${el.id} is declared but never revealed`));
       });
     }
+  }
+
+  if (pack) {
+    const nouns = { group_types: 'group type', node_types: 'node type', edge_kinds: 'edge kind', states: 'state' };
+    for (const [declared, noun] of Object.entries(nouns)) {
+      (graph[declared] ?? []).forEach((entry, i) => {
+        if (!Object.hasOwn(pack[declared] ?? {}, entry)) errors.push(located(['graph', declared, i], `${noun} '${entry}' is not mapped by pack ${pack.name}`));
+      });
+    }
+    // Overrun (ADR-0004, ADR-0006): the actions play in order, so a step's animation time is the sum of its verbs'
+    // durations; its narration needs characters / 15 s to read. The suggestion covers both, up to the next 0.5 s.
+    (script.steps ?? []).forEach((step, s) => {
+      const verbs = step.actions.map(action => Object.keys(action)[0]);
+      verbs.forEach((verb, a) => {
+        if (!pack.verbs[verb]) errors.push(located(['steps', s, 'actions', a, verb], `verb '${verb}' is not mapped by pack ${pack.name}`));
+      });
+      if (!verbs.every(verb => pack.verbs[verb])) return;
+      const animation = Math.round(verbs.reduce((sum, verb) => sum + pack.verbs[verb].duration_s, 0) * 1000) / 1000;
+      const reading = [...step.narration].length / 15;
+      const needed = Math.max(animation, reading);
+      if (needed <= step.duration_s) return;
+      const suggested = Math.ceil(needed * 2) / 2;
+      const over = animation > step.duration_s ? (reading > step.duration_s ? 'animation and narration run' : 'animation runs') : 'narration runs';
+      errors.push({
+        ...located(['steps', s, 'duration_s'], `step ${s + 1} in pack ${pack.name}: the ${over} over its ${step.duration_s} s (animation ${animation} s, narration ${reading.toFixed(1)} s to read at 15 characters/s); suggested duration_s ${suggested}`),
+        suggested_duration_s: suggested,
+        animation_s: animation,
+        pack: pack.name,
+      });
+    });
   }
 
   // An extract's path is relative to the root. An absent extract is a warning: its quotes go unchecked.
@@ -254,7 +285,8 @@ async function main(argv) {
 
 async function run(argv, report) {
   const draft = argv.includes('--draft');
-  const [command, file, ...rest] = argv.filter(a => a !== '--draft' && a !== '--overwrite');
+  const packAt = argv.indexOf('--pack');
+  const [command, file, ...rest] = argv.filter((a, i) => a !== '--draft' && a !== '--overwrite' && (packAt < 0 || (i !== packAt && i !== packAt + 1)));
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
   if (command === 'fetch' && file && rest[0]) {
     // Fetched third-party text lives only in gitignored <root>/local-data/<slug>/sources/ (#8, ADR-0009).
@@ -267,21 +299,22 @@ async function run(argv, report) {
     if (fs.existsSync(extract) && !overwrite) return usage(`extract ${rest[0]} exists; pass --overwrite to replace it`);
     return fetchExtract(file, extract, report, overwrite);
   }
-  if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> | explainer render <script> --pack <name> | explainer fetch <url> <extract-path> [--overwrite]');
+  if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> [--pack <name>] | explainer render <script> --pack <name> | explainer fetch <url> <extract-path> [--overwrite]');
   if (!fs.existsSync(file)) return usage(`no such script: ${file}`);
   if (!['explainers', 'local-data'].includes(path.basename(path.resolve(file, '../..')))) {
     return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
   }
 
-  const { errors, warnings, script } = validate(file, { draft: command === 'validate' && draft });
+  const packFile = path.join(__dirname, 'packs', String(argv[packAt + 1]), 'pack.json');
+  if ((command === 'render' || packAt >= 0) && (packAt < 0 || !fs.existsSync(packFile))) {
+    return usage(`${command} ${command === 'render' ? 'needs' : 'takes'} --pack <name>, one of: ${fs.readdirSync(path.join(__dirname, 'packs')).join(', ')}`);
+  }
+  const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : undefined;
+
+  const { errors, warnings, script } = validate(file, { draft: command === 'validate' && draft, pack });
   report.warnings = warnings;
   if (errors.length) return { code: 1, report: { ...report, errors } };
   if (command === 'validate') return { code: 0, report };
-
-  const packName = rest[rest.indexOf('--pack') + 1];
-  const packFile = path.join(__dirname, 'packs', String(packName), 'pack.json');
-  if (!rest.includes('--pack') || !fs.existsSync(packFile)) return usage(`render needs --pack <name>, one of: ${fs.readdirSync(path.join(__dirname, 'packs')).join(', ')}`);
-  const pack = JSON.parse(fs.readFileSync(packFile, 'utf8'));
 
   const out = path.join(rootOf(file), 'local-data', path.basename(path.dirname(path.resolve(file))), 'render', pack.name);
   // Build every output before writing any, so a failure leaves no half-written render.

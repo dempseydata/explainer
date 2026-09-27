@@ -58,21 +58,100 @@ test('the real binary prints the report as JSON on stdout and exits with its cod
   assert.equal(usage.status, 2);
 });
 
-test('a node type the pack does not map still prints a report, with its own exit code', () => {
+// Pack coverage (#17): a pack that does not map the script is a validation failure, located, and nothing is written.
+test('a node type the pack does not map fails render with a located error, through the real binary', () => {
   const bin = path.join(__dirname, '../cli.js');
   const r = spawnSync(process.execPath, [bin, 'render', writeScript(TWO_NODE.replace('{id: review, type: ticket.task', '{id: review, type: ticket.story').replace('[ticket.task]', '[ticket.task, ticket.story]')), '--pack', 'standard'], { encoding: 'utf8' });
-  assert.equal(r.status, 70);
+  assert.equal(r.status, 1);
   const report = JSON.parse(r.stdout);
-  assert.equal(report.errors.length, 1);
+  assert.deepEqual(report.errors.map(e => e.at), ['graph.node_types[1]']);
+  assert.match(report.errors[0].message, /ticket\.story.*standard/);
   assert.deepEqual(report.written, []);
 });
 
-test('a verb the pack does not map leaves no half-written render', async () => {
-  const script = writeScript(TWO_NODE.replace('- {reveal: write-review}', '- {reveal: write-review}\n      - {highlight: write-review}'));
-  const { code, report } = await main(['render', script, '--pack', 'standard']);
-  assert.equal(code, 70);
-  assert.deepEqual(report.written, []);
-  assert.equal(fs.existsSync(path.join(path.dirname(script), '../../local-data/two-node/render')), false);
+test('a verb or an edge kind the pack does not map fails render and leaves no render behind', async () => {
+  const cases = [
+    [TWO_NODE.replace('- {reveal: write-review}', '- {reveal: write-review}\n      - {highlight: write-review}'), 'steps[1].actions[2].highlight', /highlight.*standard/],
+    [TWO_NODE.replace('[blocks]', '[feeds]').replace('kind: blocks', 'kind: feeds'), 'graph.edge_kinds[0]', /feeds.*standard/],
+  ];
+  for (const [yaml, at, pattern] of cases) {
+    const script = writeScript(yaml);
+    const { code, report } = await main(['render', script, '--pack', 'standard']);
+    assert.deepEqual(report.errors.map(e => e.at), [at]);
+    assert.match(report.errors[0].message, pattern);
+    assert.equal(code, 1);
+    assert.deepEqual(report.written, []);
+    assert.equal(fs.existsSync(path.join(path.dirname(script), '../../local-data/two-node/render')), false);
+  }
+});
+
+test('validate --pack fails a state or group type the pack does not map, naming the entry and the pack', async () => {
+  // toString is on every object's prototype chain, not in the pack.
+  const yaml = TWO_NODE.replace('states: []', 'states: [done]').replace('group_types: []', 'group_types: [lane]').replace('node_types: [ticket.task]', 'node_types: [ticket.task, toString]');
+  const { code, report } = await main(['validate', writeScript(yaml), '--pack', 'standard']);
+  assert.deepEqual(report.errors.map(e => e.at).sort(), ['graph.group_types[0]', 'graph.node_types[1]', 'graph.states[0]']);
+  for (const e of report.errors) {
+    assert.match(e.message, /'(done|lane|toString)'.*standard/);
+    assert.equal(typeof e.line, 'number');
+  }
+  assert.equal(code, 1);
+  const unpacked = await main(['validate', writeScript(yaml)]);
+  assert.equal(unpacked.code, 0, 'without --pack, coverage is not checked');
+});
+
+test('validate --pack with no such pack is a usage error', async () => {
+  const { code } = await main(['validate', writeScript(TWO_NODE), '--pack', 'nosuch']);
+  assert.equal(code, 2);
+});
+
+// Overrun (#17, ADR-0004, ADR-0006): the suggestion is max(animation time, narration characters / 15), up to the next 0.5 s.
+// In the standard pack a reveal takes 0.5 s.
+const withStep2 = (narration, d) => TWO_NODE.replace('narration: Then review it.\n    duration_s: 3', `narration: ${narration}\n    duration_s: ${d}`);
+const LONG = 'Write it. '.repeat(8).trim(); // 79 characters: 5.27 s at 15 cps
+const withStep1 = d => TWO_NODE.replace('narration: First, write it.\n    duration_s: 2', `narration: ${LONG}\n    duration_s: ${d}`);
+
+async function overrun(yaml) {
+  const { code, report } = await main(['validate', writeScript(yaml), '--pack', 'standard']);
+  return { code, errors: report.errors };
+}
+
+test('a seeded overrun is rejected, naming the step, the pack and the animation time, with the suggested duration_s', async () => {
+  const { code, errors } = await overrun(withStep2('Then review.', 0.5)); // two reveals: 1 s; 12 characters: 0.8 s
+  assert.equal(code, 1);
+  assert.deepEqual(errors.map(e => e.at), ['steps[1].duration_s']);
+  assert.match(errors[0].message, /step 2/);
+  assert.match(errors[0].message, /standard/);
+  assert.match(errors[0].message, /animation 1 s/);
+  assert.equal(errors[0].suggested_duration_s, 1);
+  assert.equal(errors[0].animation_s, 1);
+  assert.equal(errors[0].pack, 'standard');
+  assert.match(errors[0].message, /animation (and narration )?runs? over/);
+  assert.equal(typeof errors[0].line, 'number');
+});
+
+test('over-long narration over a short animation is rejected, with a suggestion read at 15 characters per second', async () => {
+  const { code, errors } = await overrun(withStep1(2)); // one reveal: 0.5 s
+  assert.equal(code, 1);
+  assert.deepEqual(errors.map(e => e.at), ['steps[0].duration_s']);
+  assert.match(errors[0].message, /animation 0.5 s/);
+  assert.match(errors[0].message, /narration runs over/);
+  assert.doesNotMatch(errors[0].message, /animation (and narration )?runs? over|overruns/);
+  assert.equal(errors[0].suggested_duration_s, 5.5);
+  assert.equal(errors[0].animation_s, 0.5);
+});
+
+test('raising a step to its suggestion clears the rejection, and the check is monotone', async () => {
+  for (const d of [5.5, 6, 30]) assert.equal((await overrun(withStep1(d))).code, 0, `duration_s ${d}`);
+  for (const d of [5, 0.5]) assert.deepEqual((await overrun(withStep1(d))).errors.map(e => e.suggested_duration_s), [5.5], `duration_s ${d}`);
+  for (const d of [1, 1.5, 10]) assert.equal((await overrun(withStep2('Then review.', d))).code, 0, `duration_s ${d}`);
+});
+
+test('validation never writes the script, even when it rejects an overrun', async () => {
+  const script = writeScript(withStep1(2));
+  const before = fs.readFileSync(script);
+  const { code } = await main(['validate', script, '--pack', 'standard']);
+  assert.equal(code, 1);
+  assert.deepEqual(fs.readFileSync(script), before);
 });
 
 // Schema v0.1 (ADR-0002, ADR-0005). Each broken script fails with one located error.
