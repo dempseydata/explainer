@@ -1,0 +1,22 @@
+{
+  "name": "standard",
+  "ground": "paper",
+  "tokens": {
+    "paper": "#ffffff",
+    "ink": "#1f2328"
+  },
+  "face": "sans-serif",
+  "label_px": 32,
+  "stroke_px": 3,
+  "corner_px": 8,
+  "arrow_px": 15,
+  "node_types": {
+    "ticket.task": { "size": { "width": 240, "height": 96 }, "fill": "paper", "stroke": "ink", "text": "ink" }
+  },
+  "edge_kinds": {
+    "blocks": { "stroke": "ink" }
+  },
+  "verbs": {
+    "reveal": { "duration_s": 0.5 }
+  }
+}
