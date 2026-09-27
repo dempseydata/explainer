@@ -191,3 +191,25 @@ test('a source path that is absolute or climbs with .. leaves the root and fails
   await fails(BOARD.replace('path: local-data/two-node/sources/notes.md', 'path: /elsewhere/notes.md'), 'sources[0].path', /root/);
   await fails(BOARD.replace('path: local-data/two-node/sources/notes.md', 'path: local-data/../../notes.md'), 'sources[0].path', /root/);
 });
+
+// The Wayfinder example (#15): its SKILL.md is vendored beside it; the article extracts are gitignored.
+const EXAMPLE = path.join(__dirname, '../../../explainers/wayfinder');
+
+test('the Wayfinder example validates in a fresh clone, warning only for the absent article extracts', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-clone-'));
+  fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
+  const { code, report } = await main(['validate', path.join(root, 'explainers', 'wayfinder', 'script.yaml')]);
+  assert.deepEqual(report.errors, []);
+  assert.equal(code, 0);
+  assert.deepEqual(report.warnings.map(w => w.message.split(':')[0]), ['source aihero', 'source latent']);
+});
+
+const ARTICLES = ['aihero.txt', 'latent.txt'].map(f => path.join(EXAMPLE, '../../local-data/wayfinder/sources', f));
+
+test('with the article extracts present locally, every quote in the Wayfinder example is found',
+  { skip: !ARTICLES.every(f => fs.existsSync(f)) && 'article extracts absent (gitignored)' }, async () => {
+    const { code, report } = await main(['validate', path.join(EXAMPLE, 'script.yaml')]);
+    assert.deepEqual(report.errors, []);
+    assert.deepEqual(report.warnings, []);
+    assert.equal(code, 0);
+  });
