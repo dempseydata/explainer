@@ -1,0 +1,149 @@
+{
+  "$comment": "Script schema v0.1 (ADR-0002). Cross-references, quotes and reveal coverage are checked by cli.js.",
+  "type": "object",
+  "required": ["meta", "sources", "graph", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["schema", "title", "audience", "outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": 0.1 },
+        "title": { "type": "string" },
+        "audience": { "type": "string" },
+        "outcome": { "type": "string" }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "anyOf": [{ "required": ["url"] }, { "required": ["path"] }],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "path": { "type": "string" },
+          "fetched": { "type": "string" },
+          "version": { "type": "string" },
+          "via": { "type": "string" }
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "required": ["nodes"],
+      "additionalProperties": false,
+      "properties": {
+        "group_types": { "$ref": "#/$defs/names" },
+        "node_types": { "$ref": "#/$defs/names" },
+        "edge_kinds": { "$ref": "#/$defs/names" },
+        "states": { "$ref": "#/$defs/names" },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "cite"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "parent": { "type": "string" },
+              "label": { "type": "string" },
+              "cite": { "$ref": "#/$defs/cite" }
+            }
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "label", "cite"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "label": { "$ref": "#/$defs/label" },
+              "group": { "type": "string" },
+              "cite": { "$ref": "#/$defs/cite" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "from", "to", "kind", "cite"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "kind": { "type": "string" },
+              "cite": { "$ref": "#/$defs/cite" }
+            }
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["actions", "narration", "duration_s", "cite"],
+        "additionalProperties": false,
+        "properties": {
+          "actions": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/action" } },
+          "narration": { "type": "string" },
+          "duration_s": { "type": "number", "exclusiveMinimum": 0 },
+          "cite": { "$ref": "#/$defs/cite" }
+        }
+      }
+    },
+    "style_hints": { "type": "object" }
+  },
+  "$defs": {
+    "names": { "type": "array", "items": { "type": "string" } },
+    "label": { "type": "string", "maxLength": 30 },
+    "target": { "type": ["string", "array"], "items": { "type": "string" }, "minItems": 1 },
+    "citation": {
+      "type": "object",
+      "required": ["src", "quote"],
+      "additionalProperties": false,
+      "properties": { "src": { "type": "string" }, "quote": { "type": "string", "minLength": 1 } }
+    },
+    "cite": {
+      "type": ["object", "array"],
+      "if": { "type": "object" },
+      "then": { "$ref": "#/$defs/citation" },
+      "else": { "minItems": 1, "items": { "$ref": "#/$defs/citation" } }
+    },
+    "action": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "reveal": { "$ref": "#/$defs/target" },
+        "hide": { "$ref": "#/$defs/target" },
+        "highlight": { "$ref": "#/$defs/target" },
+        "focus": { "$ref": "#/$defs/target" },
+        "set_state": {
+          "type": "object",
+          "required": ["target", "state"],
+          "additionalProperties": false,
+          "properties": { "target": { "$ref": "#/$defs/target" }, "state": { "type": "string" } }
+        },
+        "annotate": {
+          "type": "object",
+          "required": ["target", "text"],
+          "additionalProperties": false,
+          "properties": { "target": { "$ref": "#/$defs/target" }, "text": { "$ref": "#/$defs/label" } }
+        }
+      }
+    }
+  }
+}

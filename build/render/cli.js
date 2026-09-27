@@ -6,19 +6,36 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { parseDocument, LineCounter } = require('yaml');
 const ELK = require('elkjs');
+const Ajv = require('ajv');
+
+const checkSchema = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(require('./schema.json'));
 
 const FRAME = { width: 1920, height: 1080 };
 
-function validate(file) {
+// Before matching, quotes and extracts fold whitespace, case, Markdown emphasis and code marks,
+// and typographic punctuation (ADR-0002).
+const normalise = text => text.replace(/[*_`]/g, '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
+  .replace(/[\u2013\u2014]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// A script lives at <root>/explainers/<slug>/script.yaml; its extracts and renders under <root>/local-data/<slug>/ (#8).
+const rootOf = file => path.resolve(path.dirname(file), '../..');
+
+// Checks every rule of schema v0.1 (ADR-0002) plus reveal coverage (ADR-0005).
+// With draft, steps may be absent and the draft: block is ignored.
+function validate(file, { draft = false } = {}) {
   const lineCounter = new LineCounter();
   const doc = parseDocument(fs.readFileSync(file, 'utf8'), { lineCounter });
   if (doc.errors.length) {
-    return { errors: doc.errors.map(e => ({ message: e.message, at: '', line: e.linePos?.[0]?.line })) };
+    return { errors: doc.errors.map(e => ({ message: e.message, at: '', line: e.linePos?.[0]?.line })), warnings: [] };
   }
-  const script = doc.toJS();
-  const graph = script.graph ?? {};
+  const script = doc.toJS() ?? {};
+  if (draft) delete script.draft;
+  const errors = [];
+  const warnings = [];
+  // Locates an error at a path into the script; the line is that of the deepest part that exists.
   const located = (at, message) => {
-    const node = doc.getIn(at, true);
+    let node;
+    for (let n = at.length; n >= 0 && !node?.range; n--) node = doc.getIn(at.slice(0, n), true);
     return {
       message,
       at: at.map(p => (typeof p === 'number' ? `[${p}]` : `.${p}`)).join('').slice(1),
@@ -26,16 +43,100 @@ function validate(file) {
     };
   };
 
-  const ends = new Set([...(graph.groups ?? []), ...(graph.nodes ?? [])].map(e => e.id));
-  const errors = [];
-  (graph.edges ?? []).forEach((edge, i) => {
-    for (const end of ['from', 'to']) {
-      if (!ends.has(edge[end])) {
-        errors.push(located(['graph', 'edges', i, end], `edge ${edge.id}: ${end} '${edge[end]}' is not a declared node or group`));
+  if (!checkSchema(draft ? { steps: [], ...script } : script)) {
+    for (const e of checkSchema.errors) {
+      if (e.keyword === 'if') continue;
+      const at = e.instancePath.split('/').slice(1).map(p => (/^\d+$/.test(p) ? Number(p) : p));
+      const extra = e.params.missingProperty ?? e.params.additionalProperty;
+      if (extra) at.push(extra);
+      const message = e.params.additionalProperty ? `'${extra}' is not part of schema v0.1`
+        : `${e.message}${'allowedValue' in e.params ? ` ${e.params.allowedValue}` : ''}`;
+      errors.push(located(at, message));
+    }
+    return { errors, warnings, script };
+  }
+
+  const graph = script.graph;
+  const sections = { groups: graph.groups ?? [], nodes: graph.nodes, edges: graph.edges ?? [] };
+  const vocab = { groups: ['type', 'group_types'], nodes: ['type', 'node_types'], edges: ['kind', 'edge_kinds'] };
+  const ids = new Map(); // one namespace: id -> section
+  for (const [section, list] of Object.entries(sections)) {
+    list.forEach((el, i) => {
+      if (ids.has(el.id)) errors.push(located(['graph', section, i, 'id'], `id '${el.id}' is already declared`));
+      else ids.set(el.id, section);
+      const [field, declared] = vocab[section];
+      if (!(graph[declared] ?? []).includes(el[field])) {
+        errors.push(located(['graph', section, i, field], `${field} '${el[field]}' is not declared in graph.${declared}`));
       }
+    });
+  }
+  const refs = [['groups', 'parent', ['groups']], ['nodes', 'group', ['groups']], ['edges', 'from', ['nodes', 'groups']], ['edges', 'to', ['nodes', 'groups']]];
+  for (const [section, field, allowed] of refs) {
+    sections[section].forEach((el, i) => {
+      if (field in el && !allowed.includes(ids.get(el[field]))) {
+        const kinds = allowed.map(a => a.slice(0, -1)).join(' or ');
+        errors.push(located(['graph', section, i, field], `${section.slice(0, -1)} ${el.id}: ${field} '${el[field]}' is not a declared ${kinds}`));
+      }
+    });
+  }
+  const parentOf = new Map(sections.groups.map(g => [g.id, g.parent]));
+  sections.groups.forEach((group, i) => {
+    const seen = new Set();
+    for (let p = group.parent; p !== undefined && !seen.has(p); p = parentOf.get(p)) {
+      if (p === group.id) { errors.push(located(['graph', 'groups', i, 'parent'], `group ${group.id} is nested inside itself`)); break; }
+      seen.add(p);
     }
   });
-  return { errors, script };
+
+  const revealed = new Set();
+  (script.steps ?? []).forEach((step, s) => step.actions.forEach((action, a) => {
+    const [verb, arg] = Object.entries(action)[0];
+    const at = ['steps', s, 'actions', a, verb];
+    const withArgs = verb === 'set_state' || verb === 'annotate';
+    const target = withArgs ? arg.target : arg;
+    const targetAt = withArgs ? [...at, 'target'] : at;
+    [].concat(target).forEach((id, k) => {
+      if (!ids.has(id)) errors.push(located(Array.isArray(target) ? [...targetAt, k] : targetAt, `${verb} targets '${id}', which is not a declared group, node or edge`));
+      if (verb === 'reveal') revealed.add(id);
+    });
+    if (verb === 'set_state' && !(graph.states ?? []).includes(arg.state)) {
+      errors.push(located([...at, 'state'], `state '${arg.state}' is not declared in graph.states`));
+    }
+  }));
+  if (script.steps) {
+    for (const [section, list] of Object.entries(sections)) {
+      list.forEach((el, i) => {
+        if (!revealed.has(el.id)) errors.push(located(['graph', section, i], `${section.slice(0, -1)} ${el.id} is declared but never revealed`));
+      });
+    }
+  }
+
+  // An extract's path is relative to the root. An absent extract is a warning: its quotes go unchecked.
+  const extracts = new Map();
+  script.sources.forEach((src, i) => {
+    if (extracts.has(src.id)) errors.push(located(['sources', i, 'id'], `source id '${src.id}' is already declared`));
+    const escapes = src.path && (path.isAbsolute(src.path) || src.path.split(/[\\/]/).includes('..'));
+    if (escapes) errors.push(located(['sources', i, 'path'], `source ${src.id}: path ${src.path} leaves the root; it must be relative to it, with no '..'`));
+    const extract = src.path && !escapes && path.resolve(rootOf(file), src.path);
+    const present = extract && fs.existsSync(extract);
+    if (!present && !escapes) warnings.push(located(['sources', i, 'path'], `source ${src.id}: extract ${src.path ? `${src.path} is absent` : 'has no path'}; its quotes were not checked`));
+    extracts.set(src.id, present ? normalise(fs.readFileSync(extract, 'utf8')) : null);
+  });
+  const cites = [
+    ...Object.entries(sections).flatMap(([section, list]) => list.map((el, i) => [['graph', section, i, 'cite'], el.cite])),
+    ...(script.steps ?? []).map((step, i) => [['steps', i, 'cite'], step.cite]),
+  ];
+  for (const [at, cite] of cites) {
+    [].concat(cite).forEach((c, k) => {
+      const citeAt = Array.isArray(cite) ? [...at, k] : at;
+      if (!extracts.has(c.src)) errors.push(located([...citeAt, 'src'], `cite names source '${c.src}', which is not declared`));
+      else if (!normalise(c.quote)) errors.push(located([...citeAt, 'quote'], `quote is empty once whitespace and Markdown marks are folded: "${c.quote}"`));
+      else if (extracts.get(c.src) !== null && !extracts.get(c.src).includes(normalise(c.quote))) {
+        errors.push(located([...citeAt, 'quote'], `quote not found in the extract of ${c.src}: "${c.quote}"`));
+      }
+    });
+  }
+  return { errors, warnings, script };
 }
 
 async function layout(script, pack) {
@@ -98,7 +199,7 @@ ${fs.readFileSync(path.join(__dirname, 'player.js'), 'utf8')}</script>
 }
 
 async function main(argv) {
-  const report = { errors: [], written: [] };
+  const report = { errors: [], warnings: [], written: [] };
   try {
     return await run(argv, report);
   } catch (e) {
@@ -107,12 +208,17 @@ async function main(argv) {
 }
 
 async function run(argv, report) {
-  const [command, file, ...rest] = argv;
+  const draft = argv.includes('--draft');
+  const [command, file, ...rest] = argv.filter(a => a !== '--draft');
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
   if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> | explainer render <script> --pack <name>');
   if (!fs.existsSync(file)) return usage(`no such script: ${file}`);
+  if (!['explainers', 'local-data'].includes(path.basename(path.resolve(file, '../..')))) {
+    return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
+  }
 
-  const { errors, script } = validate(file);
+  const { errors, warnings, script } = validate(file, { draft: command === 'validate' && draft });
+  report.warnings = warnings;
   if (errors.length) return { code: 1, report: { ...report, errors } };
   if (command === 'validate') return { code: 0, report };
 
@@ -121,9 +227,7 @@ async function run(argv, report) {
   if (!rest.includes('--pack') || !fs.existsSync(packFile)) return usage(`render needs --pack <name>, one of: ${fs.readdirSync(path.join(__dirname, 'packs')).join(', ')}`);
   const pack = JSON.parse(fs.readFileSync(packFile, 'utf8'));
 
-  // Renders go to <root>/local-data/<slug>/<pack>/ for a script at <root>/explainers/<slug>/.
-  const scriptDir = path.dirname(path.resolve(file));
-  const out = path.resolve(scriptDir, '../../local-data', path.basename(scriptDir), pack.name);
+  const out = path.join(rootOf(file), 'local-data', path.basename(path.dirname(path.resolve(file))), 'render', pack.name);
   // Build every output before writing any, so a failure leaves no half-written render.
   const lay = await layout(script, pack);
   const outputs = { 'layout.json': JSON.stringify(lay, null, 2) + '\n', 'explainer.html': playerHtml(script, pack, lay) };
@@ -139,7 +243,9 @@ module.exports = { main };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ code, report }) => {
-    for (const e of report.errors) console.error(`error: ${e.at ? `${e.at}${e.line ? ` (line ${e.line})` : ''}: ` : ''}${e.message}`);
+    const line = (kind, e) => console.error(`${kind}: ${e.at ? `${e.at}${e.line ? ` (line ${e.line})` : ''}: ` : ''}${e.message}`);
+    for (const e of report.errors) line('error', e);
+    for (const w of report.warnings) line('warning', w);
     for (const w of report.written) console.error(`wrote ${w}`);
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = code;
