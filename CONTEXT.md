@@ -32,6 +32,18 @@ _Avoid_: region, cluster, tag
 A source id and a verbatim quote, checked against that source's stored extract. The quote is the proof; a source id alone proves only that a source was named.
 _Avoid_: reference, footnote
 
+**Extract**:
+The stored text of a source that citations are checked against. Written by a deterministic fetch, never by the model; one transcribed from another tool's output is marked as such.
+_Avoid_: snapshot, copy, cache
+
+**Checkpoint**:
+One of the three points where the author approves the script so far: the graph and its grounding, the look, then the steps. The draft is saved only at a checkpoint.
+_Avoid_: gate, review, milestone
+
+**Gap**:
+A claim the author wants that no source supports, held as an open question in the draft rather than written into the script.
+_Avoid_: TODO, missing citation
+
 **Finding**:
 Something the pre-capture checks report against one render: a label under the x-height floor, or an overlap. A finding stops capture unless the author accepts it; it is never fixed by the renderer.
 _Avoid_: warning, error, issue
