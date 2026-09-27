@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// The explainer CLI. Commands: validate <script>, render <script> --pack <name>.
+// The explainer CLI. Commands: validate <script>, render <script> --pack <name>, fetch <url> <extract-path> [--overwrite].
 // The machine-readable report goes to stdout as JSON; human-readable lines go to stderr.
-// Exit codes: 0 success, 1 validation failure, 2 usage error, 70 internal error (e.g. a pack that does not map the script).
+// Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 70 internal error (e.g. a pack that does not map the script).
 const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { parseDocument, LineCounter } = require('yaml');
 const ELK = require('elkjs');
@@ -198,6 +199,50 @@ ${fs.readFileSync(path.join(__dirname, 'player.js'), 'utf8')}</script>
 `;
 }
 
+// Writes a source's text straight to disk with no model in the path (ADR-0005, ADR-0009):
+// HTTP plus pandoc's plain text first, then headless Chromium's innerText; under 100 words either way, it fails.
+async function fetchExtract(url, file, report, overwrite) {
+  const failed = message => ({ code: 1, report: { ...report, errors: [{ message }] } });
+  let html;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) return failed(`fetch ${url}: HTTP ${res.status}`);
+    html = await res.text();
+  } catch (e) {
+    return failed(`fetch ${url}: ${e.cause?.message ?? e.message}`);
+  }
+  const pandoc = spawnSync('pandoc', ['-f', 'html', '-t', 'plain', '--wrap=none'], { input: html, encoding: 'utf8' });
+  if (pandoc.status !== 0) throw new Error(`pandoc: ${pandoc.error?.message ?? pandoc.stderr}`);
+  const wordsIn = t => t.split(/\s+/).filter(Boolean).length;
+  let text = pandoc.stdout;
+  if (wordsIn(text) < 100) {
+    const { chromium } = require('playwright');
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: 'commit' });
+      // A page that polls never goes network-idle: after 5 s, read what has rendered and let the floor decide.
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      text = `${await page.evaluate(() => document.body.innerText)}\n`;
+    } catch (e) {
+      return failed(`fetch ${url}: Chromium: ${e.message.split('\n')[0]}`);
+    } finally {
+      await browser.close();
+    }
+  }
+  const count = wordsIn(text);
+  if (count < 100) return failed(`fetch ${url}: ${count} words after pandoc and Chromium, under the 100-word floor; nothing written`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // A symlinked directory on the way would carry the write out of local-data.
+  const sources = path.join(fs.realpathSync(path.resolve(file, '../../../..')), 'local-data', path.basename(path.resolve(file, '../..')), 'sources');
+  if (fs.realpathSync(path.dirname(file)) !== sources) {
+    return { code: 2, report: { ...report, errors: [{ message: `extract ${file} resolves outside ${sources} through a symlink; refusing to write through it` }] } };
+  }
+  fs.writeFileSync(file, text, { flag: overwrite ? 'w' : 'wx' });
+  report.written.push(file);
+  return { code: 0, report: { ...report, words: count } };
+}
+
 async function main(argv) {
   const report = { errors: [], warnings: [], written: [] };
   try {
@@ -209,9 +254,20 @@ async function main(argv) {
 
 async function run(argv, report) {
   const draft = argv.includes('--draft');
-  const [command, file, ...rest] = argv.filter(a => a !== '--draft');
+  const [command, file, ...rest] = argv.filter(a => a !== '--draft' && a !== '--overwrite');
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
-  if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> | explainer render <script> --pack <name>');
+  if (command === 'fetch' && file && rest[0]) {
+    // Fetched third-party text lives only in gitignored <root>/local-data/<slug>/sources/ (#8, ADR-0009).
+    const extract = path.resolve(rest[0]);
+    if (path.basename(path.dirname(extract)) !== 'sources' || path.basename(path.resolve(extract, '../../..')) !== 'local-data') {
+      return usage(`an extract must be at <root>/local-data/<slug>/sources/<file>: ${rest[0]}`);
+    }
+    if (fs.lstatSync(extract, { throwIfNoEntry: false })?.isSymbolicLink()) return usage(`extract ${rest[0]} is a symlink; refusing to write through it`);
+    const overwrite = argv.includes('--overwrite');
+    if (fs.existsSync(extract) && !overwrite) return usage(`extract ${rest[0]} exists; pass --overwrite to replace it`);
+    return fetchExtract(file, extract, report, overwrite);
+  }
+  if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> | explainer render <script> --pack <name> | explainer fetch <url> <extract-path> [--overwrite]');
   if (!fs.existsSync(file)) return usage(`no such script: ${file}`);
   if (!['explainers', 'local-data'].includes(path.basename(path.resolve(file, '../..')))) {
     return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
