@@ -6,6 +6,8 @@ status: accepted
 
 A story laid out by ELK alone runs about 5:1. Wayfinder's end frame binds on width at ×0.58, leaves about two-thirds of a 16:9 frame empty, and renders labels only at the x-height floor. Explainers will be embedded in documents and slides at reduced size, where floor-sized text stops being legible. So the renderer maximises the label x-height `F` rather than holding it at the floor, and gets there by wrapping. Groups that share a parent are each laid out by ELK on their own. The renderer packs them into rows in reading order, trying every row count and keeping the one with the largest `F`, and ELK lays out the level above around the packed parent. Estimated on Wayfinder: ≈ ×0.70, about +20 % label size. The rules in full are in the resolution of [What layout rules does the renderer add around ELK?](https://github.com/dempseydata/explainer/issues/9).
 
+*Amended by ADR-0007:* the area layout fills is the frame above the pack's caption band, not the whole frame.
+
 ## Consequences
 
 - **Layout is a pure function of script and pack.** `layout.json` is written for the checks and for debugging, and never read back. The brief's hand-adjust-and-lock is dropped: the file lived in gitignored `out/`, and any change of label, node or pack invalidates its coordinates. A layout override, if one is ever needed, belongs in the script, where it is versioned.
