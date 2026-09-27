@@ -1,4 +1,4 @@
-// Seam 1: the render CLI's commands — exit code, machine-readable report, files written.
+// Seam 1: the explainer CLI's commands — exit code, machine-readable report, files written.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');

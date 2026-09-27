@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The render CLI. Commands: validate <script>, render <script> --pack <name>.
+// The explainer CLI. Commands: validate <script>, render <script> --pack <name>.
 // The machine-readable report goes to stdout as JSON; human-readable lines go to stderr.
 // Exit codes: 0 success, 1 validation failure, 2 usage error, 70 internal error (e.g. a pack that does not map the script).
 const fs = require('node:fs');
@@ -109,7 +109,7 @@ async function main(argv) {
 async function run(argv, report) {
   const [command, file, ...rest] = argv;
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
-  if (!['validate', 'render'].includes(command) || !file) return usage('usage: render validate <script> | render render <script> --pack <name>');
+  if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> | explainer render <script> --pack <name>');
   if (!fs.existsSync(file)) return usage(`no such script: ${file}`);
 
   const { errors, script } = validate(file);
