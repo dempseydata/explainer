@@ -1,0 +1,286 @@
+<!doctype html>
+<!-- PROTOTYPE — pencil-pack look (#5). Throwaway; the answer lives in the ticket, not here. -->
+<meta charset="utf-8">
+<title>pencil pack prototype</title>
+<style>
+  @font-face { font-family: 'PatrickHand'; src: url(fonts/PatrickHand.ttf); }
+  @font-face { font-family: 'Kalam'; src: url(fonts/Kalam.ttf); }
+  @font-face { font-family: 'Caveat'; src: url(fonts/Caveat.ttf); font-weight: 400 700; }
+  html, body { margin: 0; background: #ddd; }
+  svg { display: block; }
+  #ui { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px; background: #0008; color: #fff; font: 14px system-ui; display: flex; gap: 8px; align-items: center; }
+  #ui input { flex: 1; }
+  body.shot #ui { display: none; }
+</style>
+<script src="node_modules/roughjs/bundled/rough.js"></script>
+<svg id="s" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="paper" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" seed="7"/>
+      <feColorMatrix id="paperTint" values=""/>
+    </filter>
+  </defs>
+  <rect id="bg" width="1920" height="1080" filter="url(#paper)"/>
+  <g id="groups"></g><g id="edges"></g><g id="nodes"></g><g id="fx"></g>
+</svg>
+<div id="ui"><button id="play">▶</button><input id="scrub" type="range" min="0" step="0.01"><span id="lbl"></span></div>
+<script>
+const Q = new URLSearchParams(location.search);
+const LOOK = Q.get('look') || 'A';
+
+// ---------- named colour tokens, per look ----------
+const BASE = { paper: '#f5f2e9', graphite: '#2f2f31', line: '#38383a', hatch: '#8e8b85', fog: '#6d6b67', faint: '#b9b5ab' };
+const LOOKS = {
+  A: { name: 'Graphite notebook', font: 'PatrickHand', size: 34,
+       tokens: { ...BASE, accent: '#b3261e' },
+       typeFill: 'hatch', stateAs: 'marks', groupHl: 'retrace' },
+  B: { name: 'Coloured pencils', font: 'Kalam', size: 31,
+       tokens: { ...BASE, accent: '#2f2f31', grilling: '#2f6db3', prototype: '#c46a1b', research: '#3f7f3a', task: '#7d4f9a' },
+       typeFill: 'colour', stateAs: 'marks', groupHl: 'underline' },
+  D: { name: 'Coloured pencils, red accent', font: 'Kalam', size: 31,
+       tokens: { ...BASE, accent: '#b3261e', grilling: '#2f6db3', prototype: '#c9962a', research: '#3f7f3a', task: '#7d4f9a' },
+       typeFill: 'colour', stateAs: 'marks', groupHl: 'retrace' },
+  C: { name: 'Glyph for type, fill for state', font: 'Caveat', size: 44,
+       tokens: { ...BASE, accent: '#1f5fa8' },
+       typeFill: 'none', stateAs: 'fill', groupHl: 'retrace' },
+};
+const L = LOOKS[LOOK], T = L.tokens;
+window.LOOK_INFO = { look: LOOK, name: L.name, font: L.font, size: L.size, tokens: T };
+
+// ---------- pack timings (s): pencil draws on, so reveals are slower than the standard pack's ----------
+const DUR = { reveal: 0.9, hide: 0.5, set_state: 0.6, highlight: 0.7, annotate: 0.7, focus: 0.8 };
+const BOIL_FPS = 8;
+
+// ---------- the frozen v0.1 Wayfinder script, transcribed (ids, types, steps) ----------
+const TYPE_HATCH = { grilling: 'hachure', research: 'cross-hatch', prototype: 'hachure', task: 'dashed' };
+const TW = 290, TH = 108;
+const G = {
+  map: { kind: 'group', type: 'map', x: 280, y: 80, w: 1200, h: 920, label: 'Map · wayfinder:map' },
+  r1: { kind: 'group', type: 'fog', x: 305, y: 170, w: 410, h: 805 },
+  r2: { kind: 'group', type: 'fog', x: 740, y: 170, w: 350, h: 805 },
+  r3: { kind: 'group', type: 'fog', x: 1115, y: 170, w: 340, h: 805 },
+  goal: { kind: 'node', type: 'goal', x: 1570, y: 460, w: 300, h: 160, label: 'Destination' },
+  t1: { kind: 'node', type: 'ticket.grilling', x: 365, y: 210, label: 'Grilling' },
+  t2: { kind: 'node', type: 'ticket.research', x: 365, y: 400, label: 'Research' },
+  t3: { kind: 'node', type: 'ticket.prototype', x: 365, y: 590, label: 'Prototype' },
+  t4: { kind: 'node', type: 'ticket.task', x: 365, y: 780, label: 'Task' },
+  t5: { kind: 'node', type: 'ticket.grilling', x: 770, y: 300, label: 'Grilling' },
+  t6: { kind: 'node', type: 'ticket.prototype', x: 770, y: 560, label: 'Prototype' },
+  t7: { kind: 'node', type: 'ticket.grilling', x: 1140, y: 300, label: 'Grilling' },
+  t8: { kind: 'node', type: 'ticket.research', x: 1140, y: 560, label: 'Research' },
+  s1: { kind: 'node', type: 'session', x: 30, y: 210, w: 210, h: TH, label: 'Session' },
+  sa1: { kind: 'node', type: 'subagent', x: 30, y: 400, w: 210, h: TH, label: 'Subagent' },
+  b1: { kind: 'edge', type: 'blocks', pts: [[655, 264], [712, 454], [655, 644]] },
+  b2: { kind: 'edge', type: 'blocks', pts: [[510, 508], [510, 590]] },
+  b3: { kind: 'edge', type: 'blocks', pts: [[915, 408], [915, 560]] },
+  w1: { kind: 'edge', type: 'works', pts: [[240, 454], [365, 454]] },
+  w2: { kind: 'edge', type: 'works', pts: [[240, 264], [365, 264]] },
+  h1: { kind: 'edge', type: 'handoff', pts: [[1480, 540], [1568, 540]] },
+};
+for (const o of Object.values(G)) if (o.type.startsWith('ticket.')) { o.w = TW; o.h = TH; o.tt = o.type.slice(7); }
+
+const STEPS = [
+  { d: 6, a: [{ reveal: ['goal', 'r1', 'r2', 'r3'] }, { set_state: [['r1', 'r2', 'r3'], 'fogged'] }] },
+  { d: 6, a: [{ reveal: ['map'] }, { annotate: ['map', 'One issue on your tracker'] }] },
+  { d: 7, a: [{ set_state: [['r1'], 'clear'] }, { reveal: ['t1', 't2', 't3', 't4'] }] },
+  { d: 7, a: [{ reveal: ['b1', 'b2'] }, { set_state: [['t1', 't2', 't4'], 'frontier'] }] },
+  { d: 6, a: [{ reveal: ['sa1', 'w1'] }, { set_state: [['t2'], 'claimed'] }] },
+  { d: 6, a: [{ reveal: ['s1', 'w2'] }, { set_state: [['t1'], 'claimed'] }] },
+  { d: 7, a: [{ set_state: [['t1', 't2'], 'resolved'] }, { hide: ['s1', 'sa1', 'w1', 'w2'] }, { highlight: ['map'] }] },
+  { d: 7, a: [{ set_state: [['r2'], 'clear'] }, { reveal: ['t5', 't6', 'b3'] }, { set_state: [['t3', 't5'], 'frontier'] }] },
+  { d: 5, a: [{ set_state: [['t3', 't4', 't5'], 'resolved'] }, { highlight: ['map'] }] },
+  { d: 5, a: [{ set_state: [['r3'], 'clear'] }, { reveal: ['t7', 't8'] }, { set_state: [['t6', 't7', 't8'], 'frontier'] }] },
+  { d: 4, a: [{ set_state: [['t6', 't7', 't8'], 'resolved'] }, { highlight: ['map'] }] },
+  { d: 8, a: [{ reveal: ['h1'] }, { highlight: ['goal'] }, { annotate: ['goal', 'Next: a spec, not code'] }] },
+];
+
+// ---------- timeline: actions play in order, each starts when the previous animation ends ----------
+const STEP_T = []; let acc = 0;
+for (const s of STEPS) { STEP_T.push(acc); acc += s.d; }
+const TOTAL = acc;
+const EV = [];                                      // {id, verb, t0, d, step, state?, text?}
+STEPS.forEach((s, i) => {
+  let t = STEP_T[i];
+  for (const act of s.a) {
+    const [verb, arg] = Object.entries(act)[0], d = DUR[verb];
+    if (verb === 'set_state') for (const id of arg[0]) EV.push({ id, verb, t0: t, d, step: i, state: arg[1] });
+    else if (verb === 'annotate') EV.push({ id: arg[0], verb, t0: t, d, step: i, text: arg[1] });
+    else for (const id of arg) EV.push({ id, verb, t0: t, d, step: i });
+    t += d;
+  }
+  if (t > STEP_T[i] + s.d) console.warn(`step ${i + 1} overruns in this pack`);
+});
+const prog = (e, t) => e ? Math.min(1, Math.max(0, (t - e.t0) / e.d)) : 0;
+const stepAt = t => { let i = 0; while (i + 1 < STEPS.length && STEP_T[i + 1] <= t) i++; return i; };
+const past = (id, t, pred) => EV.filter(e => e.id === id && e.t0 <= t && pred(e));
+
+// ---------- drawing helpers ----------
+const svg = document.getElementById('s'), NS = 'http://www.w3.org/2000/svg';
+const rc = rough.svg(svg);
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+const hash = s => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 1000003; return h; };
+let TICK = 0;
+const seed = key => 1 + ((hash(key) * 101 + TICK * 7919) % 2147483000);   // rough.js: seed 0 means Math.random()
+const text = (x, y, str, size, fill, parent, anchor = 'middle') => {
+  const e = el('text', { x, y, 'text-anchor': anchor, 'dominant-baseline': 'middle', 'font-size': size, 'font-family': L.font, fill,
+    stroke: T.paper, 'stroke-width': 7, 'stroke-linejoin': 'round', 'paint-order': 'stroke' }, parent);
+  e.textContent = str; return e;
+};
+const layer = (parent) => el('g', {}, parent);
+const wrap = (node, dx, dy, parent) => { const g = el('g', { transform: `translate(${dx} ${dy})` }, parent); g.appendChild(node); return g; };
+
+// Own glyph geometry in a 48×48 box, stroked through rough.js (licensing note, #2: own geometry, MIT).
+function glyph(kind, x, y, key, parent, stroke = T.graphite) {
+  const o = { stroke, strokeWidth: 2.4, roughness: 1.1, seed: seed(key) };
+  const g = el('g', { transform: `translate(${x} ${y})` }, parent);
+  const add = n => g.appendChild(n);
+  switch (kind) {
+    case 'grilling': add(rc.path('M6 6 H42 V32 H22 L12 42 L14 32 H6 Z', o)); text(24, 20, '?', 26, stroke, g); break;
+    case 'prototype': add(rc.linearPath([[18, 4], [18, 18], [6, 42], [42, 42], [30, 18], [30, 4]], o)); add(rc.line(13, 4, 35, 4, o)); add(rc.line(11, 32, 37, 32, { ...o, strokeWidth: 1.4 })); break;
+    case 'research': add(rc.circle(20, 20, 26, o)); add(rc.line(29, 29, 44, 44, { ...o, strokeWidth: 3.4 })); break;
+    case 'task': add(rc.polygon([[18, 12], [30, 2], [40, 12], [28, 22]], o)); add(rc.line(24, 17, 6, 42, { ...o, strokeWidth: 3 })); break;
+    case 'goal': add(rc.line(10, 2, 10, 46, { ...o, strokeWidth: 3 })); add(rc.polygon([[10, 4], [40, 13], [10, 23]], { ...o, fill: T.accent, fillStyle: 'hachure', hachureGap: 4 })); break;
+    case 'session': add(rc.linearPath([[8, 14], [20, 24], [8, 34]], o)); add(rc.line(24, 36, 40, 36, o)); break;
+    case 'subagent': add(rc.line(24, 4, 24, 22, o)); add(rc.line(24, 22, 8, 44, o)); add(rc.line(24, 22, 40, 44, o)); break;
+  }
+  return g;
+}
+const paths = g => [...g.querySelectorAll('path')].map(p => [p, p.getTotalLength()]);
+// ponytail: a dashed stroke draws on solid then snaps to its dash; the pack needs a mask wipe for dashed kinds
+const drawOn = (list, p) => { for (const [path, len] of list) { const done = p >= 1; path.style.strokeDasharray = done ? '' : `${len} ${len}`; path.style.strokeDashoffset = done ? '' : len * (1 - p); } };
+
+// ---------- build: every element's layers, redrawn per boil tick ----------
+const R = {};                                       // id -> {g, layers...}
+function build() {
+  for (const id in G) {
+    const o = G[id], parent = document.getElementById(o.kind === 'group' ? 'groups' : o.kind === 'edge' ? 'edges' : 'nodes');
+    R[id] = { g: el('g', {}, parent) };
+  }
+}
+function redraw() {
+  for (const id in G) {
+    const o = G[id], r = R[id]; r.g.replaceChildren();
+    const k = (s) => id + ':' + s;
+    if (o.type === 'map') {
+      r.frame = layer(r.g); r.frame.appendChild(rc.rectangle(o.x, o.y, o.w, o.h, { seed: seed(k('f')), stroke: T.line, strokeWidth: 2.6, roughness: 1.2 }));
+      r.frame.appendChild(rc.rectangle(o.x + 5, o.y + 4, o.w - 8, o.h - 9, { seed: seed(k('f2')), stroke: T.line, strokeWidth: 1.2, roughness: 1.6 }));
+      r.label = layer(r.g); text(o.x + 25, o.y + 45, o.label, L.size, T.graphite, r.label, 'start');
+      r.hl = layer(r.g);
+      if (L.groupHl === 'retrace') r.hl.appendChild(rc.rectangle(o.x - 6, o.y - 6, o.w + 12, o.h + 12, { seed: seed(k('hl')), stroke: T.accent, strokeWidth: 3.2, roughness: 2 }));
+      else { r.hl.appendChild(rc.line(o.x + 22, o.y + 70, o.x + 360, o.y + 68, { seed: seed(k('hl')), stroke: T.accent, strokeWidth: 3.5, roughness: 1.8 }));
+             r.hl.appendChild(rc.line(o.x + 30, o.y + 78, o.x + 330, o.y + 77, { seed: seed(k('hl2')), stroke: T.accent, strokeWidth: 2.5, roughness: 2 })); }
+    } else if (o.type === 'fog') {
+      r.outline = layer(r.g); r.outline.appendChild(rc.rectangle(o.x, o.y, o.w, o.h, { seed: seed(k('o')), stroke: T.faint, strokeWidth: 2.2, strokeLineDash: [2, 10], roughness: 0.8 }));
+    } else if (o.kind === 'edge') {
+      const opt = { seed: seed(k('e')), stroke: T.line, roughness: 1.2 };
+      if (o.type === 'blocks') Object.assign(opt, { strokeWidth: 2.6 });
+      if (o.type === 'works') Object.assign(opt, { strokeWidth: 1.8, strokeLineDash: [9, 9] });
+      if (o.type === 'handoff') Object.assign(opt, { strokeWidth: 4.5, roughness: 1.6 });
+      r.body = layer(r.g);
+      r.body.appendChild(o.pts.length > 2 ? rc.curve(o.pts, opt) : rc.linearPath(o.pts, opt));
+      const [a, b] = o.pts.slice(-2), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), hl = o.type === 'handoff' ? 24 : 18;
+      const wing = s => [b[0] - hl * Math.cos(ang + s), b[1] - hl * Math.sin(ang + s)];
+      const headOpt = { ...opt, strokeLineDash: undefined, seed: seed(k('h')) };
+      if (o.type === 'blocks') r.body.appendChild(rc.polygon([wing(0.45), b, wing(-0.45)], { ...headOpt, fill: T.line, fillStyle: 'solid' }));
+      else r.body.appendChild(rc.linearPath([wing(0.5), b, wing(-0.5)], headOpt));
+    } else {
+      const shapeOpt = { seed: seed(k('b')), stroke: T.line, strokeWidth: 2.4, roughness: 1.3 };
+      if (o.tt && L.typeFill === 'hatch') Object.assign(shapeOpt, { fill: T.hatch, fillStyle: TYPE_HATCH[o.tt], hachureGap: 11, fillWeight: 1.3, hachureAngle: o.tt === 'prototype' ? 0 : -41 });
+      if (o.tt && L.typeFill === 'colour') Object.assign(shapeOpt, { fill: T[o.tt], fillStyle: 'hachure', hachureGap: 8, fillWeight: 1.6 });
+      if (o.type === 'subagent') shapeOpt.strokeLineDash = [8, 8];
+      r.body = layer(r.g);
+      r.body.appendChild(o.type === 'goal' ? rc.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w, o.h, shapeOpt) : rc.rectangle(o.x, o.y, o.w, o.h, shapeOpt));
+      r.state = {};
+      if (o.tt && L.stateAs === 'fill') {
+        const f = (style, gap, w) => { const g = layer(r.g); g.appendChild(rc.rectangle(o.x, o.y, o.w, o.h, { seed: seed(k(style)), stroke: 'none', fill: T.hatch, fillStyle: style, hachureGap: gap, fillWeight: w })); return g; };
+        r.state.frontier = f('hachure', 16, 1.2);
+        r.state.claimed = f('cross-hatch', 10, 1.3);
+        r.state.resolved = f('hachure', 4, 1.1);
+      }
+      r.glyph = layer(r.g);
+      const gx = o.type === 'goal' ? o.x + 40 : o.x + 14, gy = o.y + o.h / 2 - 24;
+      glyph(o.tt || o.type, gx, gy, k('g'), r.glyph);
+      r.label = layer(r.g);
+      text(o.x + (o.type === 'goal' ? o.w / 2 + 25 : o.tt ? o.w / 2 - 6 : o.w / 2 + 22), o.y + o.h / 2 + 2, o.label, L.size, T.graphite, r.label);
+      if (o.tt && L.stateAs === 'marks') {
+        r.state.frontier = layer(r.g); r.state.frontier.appendChild(rc.rectangle(o.x - 5, o.y - 5, o.w + 10, o.h + 10, { seed: seed(k('fr')), stroke: T.graphite, strokeWidth: 4.2, roughness: 1.6 }));
+        r.state.claimed = layer(r.g);
+        r.state.claimed.appendChild(rc.circle(o.x + o.w - 4, o.y + 4, 52, { seed: seed(k('cl')), stroke: T.graphite, strokeWidth: 2.4, fill: T.paper, fillStyle: 'solid' }));
+        text(o.x + o.w - 4, o.y + 3, '@', 34, T.graphite, r.state.claimed);
+      }
+      if (o.tt) {                                    // resolved: a tick, in every look
+        const tick = layer(r.g); (r.state.resolved ||= layer(r.g)).appendChild(tick);
+        tick.appendChild(rc.linearPath([[o.x + o.w - 62, o.y + o.h / 2 - 2], [o.x + o.w - 44, o.y + o.h - 22], [o.x + o.w - 12, o.y + 14]], { seed: seed(k('tk')), stroke: T.graphite, strokeWidth: 4.5, roughness: 1 }));
+      }
+      if (o.kind === 'node') {
+        r.hl = layer(r.g);
+        r.hl.appendChild(rc.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w + 50, o.h + 56, { seed: seed(k('hl')), stroke: T.accent, strokeWidth: 3.2, roughness: 2.4 }));
+      }
+    }
+    for (const key of ['frame', 'body', 'outline', 'hl']) if (r[key]) r[key + 'P'] = paths(r[key]);
+    for (const s in r.state || {}) r['st_' + s] = paths(r.state[s]);
+  }
+  // annotations: text plus a hand-drawn arrow to the target
+  const fx = document.getElementById('fx'); fx.replaceChildren();
+  for (const e of EV.filter(e => e.verb === 'annotate')) {
+    const o = G[e.id], g = el('g', {}, fx);
+    const cx = o.type === 'map' ? o.x + 700 : o.x + o.w / 2, ty = o.type === 'map' ? o.y + 20 : o.y - 110;
+    text(cx, ty, e.text, L.size, T.accent, g);
+    if (o.type !== 'map') g.appendChild(rc.linearPath([[cx + 10, ty + 28], [cx - 4, o.y - 40], [cx + 2, o.y - 18]], { seed: seed(e.id + 'an'), stroke: T.accent, strokeWidth: 2.4 }));
+    else g.appendChild(rc.linearPath([[cx - 180, ty], [o.x + 380, o.y + 45]], { seed: seed(e.id + 'an'), stroke: T.accent, strokeWidth: 2.4 }));
+    e.g = g; e.P = paths(g);
+  }
+}
+
+// ---------- seek(t): pure in time ----------
+let boil = -1;
+function seek(t) {
+  TICK = Math.floor(t * BOIL_FPS);
+  if (TICK !== boil) { redraw(); boil = TICK; }
+  const step = stepAt(t);
+  for (const id in G) {
+    const o = G[id], r = R[id];
+    const vis = past(id, t, e => e.verb === 'reveal' || e.verb === 'hide').at(-1);
+    const p = vis ? prog(vis, t) : 0, shown = vis && (vis.verb === 'reveal' ? p > 0 : p < 1);
+    r.g.setAttribute('visibility', shown ? 'visible' : 'hidden');
+    r.g.setAttribute('opacity', vis && vis.verb === 'hide' ? 1 - p : 1);
+    const rp = vis && vis.verb === 'reveal' ? p : 1;
+    for (const key of ['frameP', 'bodyP', 'outlineP']) if (r[key]) drawOn(r[key], rp);
+    for (const key of ['label', 'glyph']) if (r[key]) r[key].setAttribute('opacity', Math.max(0, rp * 2 - 1));   // lettering lands in the second half
+    // persistent state: the new state's layer draws on, the previous one fades
+    const ss = past(id, t, e => e.verb === 'set_state'), cur = ss.at(-1), prev = ss.at(-2), sp = prog(cur, t);
+    for (const s in r.state || {}) {
+      const on = cur?.state === s ? sp : prev?.state === s && cur ? 1 - sp : 0;
+      r.state[s].setAttribute('opacity', on > 0 ? (cur?.state === s ? 1 : on) : 0);
+      if (cur?.state === s) drawOn(r['st_' + s], sp);
+    }
+    // transient: only this step's highlight
+    const hl = EV.find(e => e.id === id && e.verb === 'highlight' && e.step === step && e.t0 <= t);
+    if (r.hl) { r.hl.setAttribute('opacity', hl ? 1 : 0); drawOn(r.hlP, hl ? prog(hl, t) : 0); }
+  }
+  for (const e of EV.filter(e => e.verb === 'annotate')) {
+    const on = e.step === step && e.t0 <= t;
+    e.g.setAttribute('opacity', on ? Math.min(1, prog(e, t) * 2) : 0);
+    drawOn(e.P.slice(1), on ? prog(e, t) : 0);     // the lettering fades; the arrow draws
+  }
+}
+const frameKey = t => EV.map(e => prog(e, t).toFixed(3)).join(',') + '|' + stepAt(t) + '|' + Math.floor(t * BOIL_FPS);
+
+// ---------- boot ----------
+document.getElementById('bg').setAttribute('fill', T.paper);
+{ const c = h => parseInt(h, 16) / 255, [r, g, b] = [c(T.paper.slice(1, 3)), c(T.paper.slice(3, 5)), c(T.paper.slice(5, 7))];
+  document.getElementById('paperTint').setAttribute('values', `0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  0 0 0 -0.35 1`); }
+Object.assign(window, { seek, frameKey, STEP_T, STEPS, TOTAL });
+if (Q.has('shot')) document.body.classList.add('shot');
+document.fonts.ready.then(() => {
+  build(); seek(0);
+  const scrub = document.getElementById('scrub'), lbl = document.getElementById('lbl');
+  scrub.max = TOTAL;
+  const show = t => { seek(t); lbl.textContent = `${L.name} · step ${stepAt(t) + 1} · ${t.toFixed(2)} s`; };
+  scrub.oninput = () => show(+scrub.value);
+  let playing = false, t0;
+  document.getElementById('play').onclick = () => { playing = !playing; t0 = performance.now() - scrub.value * 1000; requestAnimationFrame(function f(now) {
+    if (!playing) return; const t = (now - t0) / 1000; if (t > TOTAL) { playing = false; return; } scrub.value = t; show(t); requestAnimationFrame(f); }); };
+  window.READY = true;
+});
+</script>

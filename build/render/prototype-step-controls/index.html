@@ -1,0 +1,193 @@
+<!doctype html>
+<!-- PROTOTYPE — step-through controls (#11). Throwaway; the answer lives in the ticket, not here.
+     Three variants of the controls around either pack's player, switchable via ?variant=A|B|C&pack=standard|pencil&chrome=neutral|pack.
+     The players run unmodified in an iframe; this page wraps their seek(t) to burn the caption band into the frame.
+     Run: python3 -m http.server 8011 -d build/render  →  http://localhost:8011/prototype-step-controls/ -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>step controls prototype</title>
+<style>
+  :root { --bg: #ececec; --ink: #1d2127; --dim: #6b7280; --ui: #fff; --line: #c9ced6; --acc: #1d2127; --font: system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font); }
+  button { font: inherit; color: inherit; background: var(--ui); border: 1px solid var(--line); border-radius: 6px; min-width: 40px; height: 36px; cursor: pointer; }
+  button:focus-visible, .bar:focus-visible { outline: 2px solid #0072b2; outline-offset: 2px; }
+  .frame { position: relative; overflow: hidden; background: #fff; }
+  .frame iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; }
+  /* segmented progress: one segment per step, width ∝ duration */
+  .bar { position: relative; display: flex; gap: 3px; cursor: pointer; touch-action: none; }
+  .bar .seg { position: relative; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--acc); }
+  .count { font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; }
+
+  /* A — transport beneath the frame */
+  body.A main { max-width: min(100vw, calc((100vh - 84px) * 16 / 9)); margin: 0 auto; padding: 12px 16px 0; box-sizing: border-box; }
+  body.A .ctrl { display: flex; align-items: center; gap: 8px; padding: 10px 0; }
+  body.A .bar { flex: 1; height: 8px; } body.A .bar .seg { height: 8px; }
+
+  /* B — video-player overlay, top edge (the burned caption band owns the bottom) */
+  body.B .stage { width: 100%; }
+  body.B main { height: 100%; display: flex; align-items: center; justify-content: center; background: #111; }
+  body.B .ctrl { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+                 background: linear-gradient(#000a, #0000); color: #fff; transition: opacity .25s; }
+  body.B .ctrl button { background: #fff2; border-color: #fff4; color: #fff; }
+  body.B .ctrl .count { color: #fffc; }
+  body.B .bar { flex: 1; height: 6px; } body.B .bar .seg { height: 6px; background: #fff4; } body.B .bar .fill { background: #fff; }
+  body.B.idle .ctrl { opacity: 0; } body.B.idle { cursor: none; }
+
+  /* C — nothing visible but a hairline; transcript beside the frame */
+  body.C main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 16px; box-sizing: border-box; height: 100vh; }
+  body.C .stage { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  body.C .bar { height: 3px; margin-top: 6px; } body.C .bar .seg { height: 3px; }
+  body.C .bar:hover, body.C .bar:hover .seg { height: 8px; }
+  body.C .ctrl { display: none; }
+  body.C .hint { color: var(--dim); font-size: 13px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
+  body.C .hint button { height: 28px; font-size: 13px; }
+  body.C .stage:fullscreen { background: var(--bg); box-sizing: border-box; }   /* fullscreen: the frame gets the screen, the transcript is left behind */
+  body.C ol { margin: 0; padding: 0 0 0 1.6em; overflow: auto; align-self: center; max-height: 100%; min-height: 0; }   /* only the transcript scrolls */
+  body.C li { padding: 6px 4px; border-radius: 4px; cursor: pointer; color: var(--dim); }
+  body.C li.done { color: var(--ink); } body.C li.now { background: var(--ui); color: var(--ink); box-shadow: inset 3px 0 var(--acc); }
+  body.C .zone { position: absolute; top: 0; bottom: 0; width: 50%; cursor: pointer; }
+  body.C .zone.l { left: 0; cursor: w-resize; } body.C .zone.r { right: 0; cursor: e-resize; }
+  @media (max-width: 800px) { body.C main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    body.C ol { align-self: start; } }   /* narrow: frame on top, transcript scrolls beneath it */
+
+  /* prototype switcher — not part of any design */
+  #sw { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; padding: 6px 10px;
+        background: #ff0; color: #000; border: 2px solid #000; border-radius: 99px; font: 13px system-ui; box-shadow: 0 4px 14px #0005; z-index: 9; }
+  #sw button { height: 26px; min-width: 26px; background: #fff; border-color: #000; }
+  #sw .st { font: 11px ui-monospace, monospace; }
+</style>
+<body>
+<main>
+  <div class="stage">
+    <div class="frame" id="frame"><iframe id="p"></iframe></div>
+    <div class="ctrl" id="ctrl">
+      <button id="back" aria-label="Previous step" title="Previous step (←)">⏮</button>
+      <button id="play" aria-label="Play" title="Play / pause (space)">▶</button>
+      <button id="next" aria-label="Next step" title="Next step (→)">⏭</button>
+      <div class="bar" id="bar" tabindex="-1"></div>
+      <span class="count" id="count"></span>
+    </div>
+  </div>
+  <ol id="tx" hidden></ol>
+</main>
+<div id="sw">
+  <button id="swV" title="variant ([ / ])">V</button><button id="swP" title="pack">P</button><button id="swC" title="chrome">C</button>
+  <span id="swL"></span><span class="st" id="swS"></span>
+</div>
+<script type="module">
+const Q = new URLSearchParams(location.search);
+const V = Q.get('variant') || 'A', PACK = Q.get('pack') || 'standard', CHROME = Q.get('chrome') || 'neutral';
+const NAMES = { A: 'Transport beneath', B: 'Overlay, auto-hide', C: 'Hairline + transcript' };
+document.body.className = V;
+const $ = id => document.getElementById(id);
+const go = (k, v) => { Q.set(k, v); location.search = Q; };
+const cyc = (arr, cur, d) => arr[(arr.indexOf(cur) + d + arr.length) % arr.length];
+$('swV').onclick = () => go('variant', cyc(['A', 'B', 'C'], V, 1));
+$('swP').onclick = () => go('pack', cyc(['standard', 'pencil'], PACK, 1));
+$('swC').onclick = () => go('chrome', cyc(['neutral', 'pack'], CHROME, 1));
+$('swL').textContent = `${V} — ${NAMES[V]} · ${PACK} · chrome: ${CHROME}`;
+
+// ---------- load the pack's player, unmodified ----------
+const SRC = { standard: '../prototype-standard-pack/player.html?look=A&shot', pencil: '../prototype-pencil-pack/player.html?look=D&shot' };
+const ifr = $('p'); ifr.src = SRC[PACK];
+await new Promise(r => ifr.onload = r);
+const W = ifr.contentWindow, D = ifr.contentDocument;
+while (!W.READY) await new Promise(r => setTimeout(r, 30));
+const NARR = (await (await fetch('../prototype-standard-pack/model.json')).json()).steps.map(s => s.narration);
+const { STEPS, STEP_T, TOTAL } = W, N = STEPS.length;
+const END = STEP_T.map((t, i) => t + STEPS[i].d), REST = END.map(e => e - 1 / 30);   // rest = a step's last frame (ADR-0004's seek)
+const stepAt = t => { let i = 0; while (i + 1 < N && STEP_T[i + 1] <= t) i++; return i; };
+
+// ---------- burn the caption band into the frame: the pack draws it, seek(t) sets it ----------
+const NS = 'http://www.w3.org/2000/svg', svg = D.querySelector('svg');
+const sample = svg.querySelector('text'), cs = W.getComputedStyle(sample);
+const PK = { bg: svg.querySelector('#bg').getAttribute('fill'), ink: sample.getAttribute('fill') || cs.fill, font: sample.getAttribute('font-family') };
+const BAND = 150, CAP = 40, GAP = 12;                  // band height and caption size in 1080p px; ~2 lines at 15 cps × ≤8 s
+W.seek(TOTAL); const content = D.createElementNS(NS, 'g');
+for (const c of [...svg.children]) if (c.tagName !== 'defs' && c.id !== 'bg') content.appendChild(c);
+svg.appendChild(content);
+const bb = content.getBBox(), bottom = bb.y + bb.height, room = 1080 - BAND - GAP;
+const S = Math.min(1, room / bottom);                  // shrink only if the diagram reaches into the band
+content.setAttribute('transform', `translate(${960 * (1 - S)} 0) scale(${S})`);
+const cap = D.createElementNS(NS, 'text');
+Object.entries({ x: 960, 'text-anchor': 'middle', 'font-family': PK.font, 'font-size': CAP, fill: PK.ink }).forEach(([k, v]) => cap.setAttribute(k, v));
+svg.appendChild(cap);
+const lines = s => {                                   // greedy wrap to 1760 px, measured in the pack's face
+  const out = [''];
+  for (const w of s.split(' ')) { cap.textContent = (out.at(-1) + ' ' + w).trim(); if (cap.getComputedTextLength() > 1760 && out.at(-1)) out.push(w); else out[out.length - 1] = cap.textContent; }
+  return out; };
+const WRAP = NARR.map(lines);
+const setCap = i => {
+  cap.textContent = '';
+  const L = WRAP[i], y0 = 1080 - BAND / 2 - (L.length - 1) * CAP * 0.65;
+  L.forEach((l, k) => { const ts = D.createElementNS(NS, 'tspan'); ts.setAttribute('x', 960); ts.setAttribute('y', y0 + k * CAP * 1.3); ts.setAttribute('dominant-baseline', 'central'); ts.textContent = l; cap.appendChild(ts); });
+};
+const seek = t => { W.seek(t); setCap(stepAt(t)); };  // caption belongs to the step: switches at the boundary, so frameKey's step term already covers it
+
+// ---------- controls: all through seek(t) ----------
+let t = 0, target = null, t0w, t0;
+const done = t => (Math.abs(t - REST[stepAt(t)]) < 1e-6 || t >= REST[stepAt(t)]) ? stepAt(t) : stepAt(t) - 1;   // last completed step, -1 before any
+const show = nt => { t = Math.max(0, Math.min(TOTAL, nt)); seek(t); render(); };
+const run = (from, to) => { show(from); target = to; t0w = performance.now(); t0 = from; requestAnimationFrame(tick); render(); };
+function tick(now) { if (target === null) return; const nt = t0 + (now - t0w) / 1000; if (nt >= target) { show(target); target = null; render(); return; } show(nt); requestAnimationFrame(tick); }
+const stop = () => { target = null; render(); };
+const next = () => { if (target !== null && target < TOTAL) { const e = target; stop(); return show(e); } const i = done(t) + 1;   // mid-step: finish it first
+   if (i < N) run(STEP_T[i], REST[i]); };                  // plays the next step, holds at its end
+const back = () => { stop(); const p = done(t); show(Math.abs(t - REST[p]) < 1e-6 ? (p > 0 ? REST[p - 1] : 0) : p >= 0 ? REST[p] : 0); };  // no reverse animation
+const fullscreen = () => document.fullscreenElement ? document.exitFullscreen() : document.querySelector('.stage').requestFullscreen();
+addEventListener('fullscreenchange', () => fit());
+const play = () => target !== null ? stop() : run(t >= TOTAL - 0.05 ? 0 : t, TOTAL);
+$('next').onclick = next; $('back').onclick = back; $('play').onclick = play;
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+  const k = { ArrowRight: next, ArrowLeft: back, ' ': play, f: () => V === 'C' && fullscreen(), Home: () => (stop(), show(0)), End: () => (stop(), show(TOTAL)),
+              ']': () => go('variant', cyc(['A', 'B', 'C'], V, 1)), '[': () => go('variant', cyc(['A', 'B', 'C'], V, -1)) }[e.key];
+  if (k) { e.preventDefault(); k(); }
+});
+
+// segmented bar: click or drag to scrub
+const bar = $('bar');
+const segs = STEPS.map(s => { const d = document.createElement('div'); d.className = 'seg'; d.style.flex = s.d; d.innerHTML = '<div class="fill"></div>'; bar.appendChild(d); return d; });
+const scrubTo = e => { const r = bar.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); stop(); show(f * TOTAL); };
+bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); scrubTo(e); bar.onpointermove = scrubTo; };
+bar.onpointerup = () => bar.onpointermove = null;
+
+// C: transcript and click zones
+if (V === 'C') {
+  const tx = $('tx'); tx.hidden = false;
+  NARR.forEach((n, i) => { const li = document.createElement('li'); li.textContent = n; li.onclick = () => { stop(); show(REST[i]); }; tx.appendChild(li); });
+  for (const [c, f] of [['l', back], ['r', next]]) { const z = document.createElement('div'); z.className = 'zone ' + c; z.onclick = f; $('frame').appendChild(z); }
+  const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = '<span>← → or click either half to step · space plays · f fullscreen</span><button id="fs" aria-label="Fullscreen" title="Fullscreen (f)">⛶</button>'; $('frame').after(bar, h);
+  $('fs').onclick = fullscreen;
+}
+// B: controls fade after 2 s without the pointer
+if (V === 'B') { let to; const wake = () => { document.body.classList.remove('idle'); clearTimeout(to); to = setTimeout(() => target !== null && document.body.classList.add('idle'), 2000); };
+  addEventListener('pointermove', wake); addEventListener('keydown', wake); wake(); $('frame').appendChild($('ctrl')); }
+
+function render() {
+  segs.forEach((s, i) => s.firstChild.style.width = `${Math.max(0, Math.min(1, (t - STEP_T[i]) / STEPS[i].d)) * 100}%`);
+  const p = done(t);
+  $("count").textContent = `${t === 0 ? 0 : stepAt(t) + 1} / ${N}`;   // the step on screen, animating or held
+  $('play').textContent = target !== null ? '⏸' : '▶'; $('play').setAttribute('aria-label', target !== null ? 'Pause' : 'Play');
+  $('back').disabled = t === 0; $('next').disabled = p >= N - 1;
+  if (V === 'C') [...$('tx').children].forEach((li, i) => { const c = i === stepAt(t) && t > 0 ? 'now' : i <= p ? 'done' : '';
+    if (c === 'now' && li.className !== 'now') li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); li.className = c; });   // current line follows playback
+  $('swS').textContent = `t=${t.toFixed(2)} done=${p + 1} · x-height ×${(S * scale).toFixed(2)}`;
+}
+
+// ---------- fit the 1920×1080 frame to the window ----------
+let scale = 1;
+function fit() {
+  const f = $('frame'), full = !!document.fullscreenElement, st = f.parentElement; st.style.padding = '';
+  const w = full ? innerWidth : st.clientWidth, h = V === 'B' ? innerHeight : V === 'C' ? innerHeight - (full ? 40 : 70) : Infinity;
+  const fw = Math.min(w, h * 16 / 9); scale = fw / 1920;
+  if (full) st.style.padding = `0 ${(innerWidth - fw) / 2}px`;   // centre the frame and bar together
+  f.style.width = fw + 'px'; f.style.height = fw * 9 / 16 + 'px'; ifr.style.transform = `scale(${scale})`; render();
+}
+addEventListener('resize', fit);
+if (CHROME === 'pack') { const r = document.documentElement.style; r.setProperty('--bg', PK.bg); r.setProperty('--ink', PK.ink); r.setProperty('--font', PK.font); r.setProperty('--ui', PK.bg); }
+console.log('band shrink S =', S.toFixed(3), 'content bottom', Math.round(bottom), 'room', room);
+fit(); show(0);
+window.PROTO = { S, show, next, back, REST };
+</script>

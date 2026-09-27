@@ -1,0 +1,264 @@
+<!doctype html>
+<!-- PROTOTYPE — standard-pack look (#6). Throwaway; the answer lives in the ticket, not here. Reads model.json from layout.mjs. -->
+<meta charset="utf-8">
+<title>standard pack prototype</title>
+<style>
+  @font-face { font-family: 'Inter'; src: url(node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2); font-weight: 400; }
+  @font-face { font-family: 'Inter'; src: url(node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2); font-weight: 600; }
+  @font-face { font-family: 'Atkinson'; src: url(node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-400-normal.woff2); font-weight: 400; }
+  @font-face { font-family: 'Atkinson'; src: url(node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-600-normal.woff2); font-weight: 600; }
+  @font-face { font-family: 'Plex'; src: url(node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2); font-weight: 400; }
+  @font-face { font-family: 'Plex'; src: url(node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2); font-weight: 600; }
+  html, body { margin: 0; background: #888; }
+  svg { display: block; }
+  #ui { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px; background: #0008; color: #fff; font: 14px system-ui; display: flex; gap: 8px; align-items: center; }
+  #ui input { flex: 1; }
+  body.shot #ui { display: none; }
+</style>
+<svg id="s" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs id="defs">
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur id="blur" stdDeviation="7"/></filter>
+  </defs>
+  <rect id="bg" width="1920" height="1080"/>
+  <g id="world"><g id="groups"></g><g id="edges"></g><g id="nodes"></g><g id="fx"></g></g>
+</svg>
+<div id="ui"><button id="play">▶</button><input id="scrub" type="range" min="0" step="0.01"><span id="lbl"></span></div>
+<script type="module">
+const Q = new URLSearchParams(location.search);
+const LOOK = Q.get('look') || 'A';
+
+// ---------- icon sets (licensing shortlist, #2): one set per look ----------
+const ICONSETS = {
+  lucide: { dir: 'node_modules/lucide-static/icons/', n: { grilling: 'message-circle-question', prototype: 'flask-conical', research: 'search', task: 'hammer',
+            goal: 'flag', session: 'terminal', subagent: 'git-fork', claimed: 'user-round', resolved: 'check', fog: 'cloud-fog' } },
+  tabler: { dir: 'node_modules/@tabler/icons/icons/outline/', n: { grilling: 'message-circle-question', prototype: 'flask', research: 'search', task: 'hammer',
+            goal: 'flag', session: 'terminal-2', subagent: 'git-fork', claimed: 'user', resolved: 'check', fog: 'cloud-fog' } },
+  phosphor: { dir: 'node_modules/@phosphor-icons/core/assets/regular/', n: { grilling: 'chat-circle-dots', prototype: 'flask', research: 'magnifying-glass', task: 'hammer',
+            goal: 'flag', session: 'terminal-window', subagent: 'git-fork', claimed: 'user', resolved: 'check', fog: 'cloud-fog' } },
+};
+
+// ---------- named colour tokens, per look. Type colours are Okabe-Ito hues, darkened for light grounds ----------
+const LIGHT_TYPES = { grilling: '#0072b2', prototype: '#a86b00', research: '#00805e', task: '#a34f85' };
+const LOOKS = {
+  A: { name: 'Light, tinted by type', font: 'Inter', icons: 'lucide', fog: 'lift', card: 'tint',
+       tokens: { bg: '#ffffff', surface: '#ffffff', ink: '#1d2127', frame: '#7d8591', line: '#4a525e', border: '#c9ced6',
+                 fogFill: '#e6e9ed', fogLine: '#8d949e', accent: '#c62828', ...LIGHT_TYPES } },
+  B: { name: 'Light, neutral card, type stripe', font: 'Atkinson', icons: 'tabler', fog: 'outline', card: 'stripe',
+       tokens: { bg: '#f6f7f9', surface: '#ffffff', ink: '#1d2127', frame: '#7d8591', line: '#4a525e', border: '#c3c9d2',
+                 fogLine: '#8d949e', resolvedFill: '#e8ebef', accent: '#c62828', ...LIGHT_TYPES } },
+  C: { name: 'Dark, card with type bar', font: 'Plex', icons: 'phosphor', fog: 'lift', card: 'bar',
+       tokens: { bg: '#15181d', surface: '#232833', ink: '#e9ecf1', frame: '#6b7482', line: '#aab2bf', border: '#3a414d',
+                 fogFill: '#262b33', fogLine: '#6b7482', accent: '#ff6b6b',
+                 grilling: '#56b4e9', prototype: '#e69f00', research: '#2fb58c', task: '#d68fbd' } },
+};
+const L = LOOKS[LOOK], T = L.tokens, IS = ICONSETS[L.icons];
+
+// ---------- pack timings (s): no draw-on, so every verb is quicker than pencil's ----------
+const DUR = { reveal: 0.4, hide: 0.3, set_state: 0.4, highlight: 0.6, annotate: 0.4, focus: 0.6 };
+const X_HEIGHT = 16;                                 // rendered x-height floor at 1080p (pencil finding: measure x-height, not size)
+
+// ---------- model from ELK ----------
+const M = await (await fetch('model.json')).json();
+const PAD = 60, K = Math.min((1920 - 2 * PAD) / M.size.w, (1080 - 2 * PAD) / M.size.h);
+const OX = (1920 - M.size.w * K) / 2, OY = (1080 - M.size.h * K) / 2;
+const G = {};
+for (const g of M.groups) G[g.id] = { ...g, kind: 'group' };
+for (const n of M.nodes) G[n.id] = { ...n, kind: 'node' };
+for (const e of M.edges) G[e.id] = { ...e, type: e.kind, kind: 'edge' };
+
+const ICON = {};
+await Promise.all(Object.entries(IS.n).map(async ([k, n]) => { const r = await fetch(IS.dir + n + '.svg'); if (!r.ok) throw new Error(`icon ${n}`); ICON[k] = await r.text(); }));
+await document.fonts.load(`400 20px ${L.font}`); await document.fonts.load(`600 20px ${L.font}`);
+const ctx = document.createElement('canvas').getContext('2d'); ctx.font = `400 100px ${L.font}`;
+const XR = ctx.measureText('x').actualBoundingBoxAscent / 100;
+const FS = Math.ceil(X_HEIGHT / (XR * K));           // font size in layout units that renders at the x-height floor
+const P = 1 / K;                                    // one rendered pixel, in layout units: strokes are stated in rendered px
+
+// ---------- timeline: actions play in order, each starts when the previous ends ----------
+const norm = a => { const [verb, v] = Object.entries(a)[0];
+  if (verb === 'set_state') return { verb, ids: [].concat(v.target), state: v.state };
+  if (verb === 'annotate') return { verb, ids: [v.target], text: v.text };
+  return { verb, ids: [].concat(v) }; };
+const STEPS = M.steps, STEP_T = []; let acc = 0;
+for (const s of STEPS) { STEP_T.push(acc); acc += s.d; }
+const TOTAL = acc, EV = [], USED = [];
+STEPS.forEach((s, i) => {
+  let t = STEP_T[i];
+  for (const a of s.a.map(norm)) { const d = DUR[a.verb]; for (const id of a.ids) EV.push({ ...a, id, t0: t, d, step: i }); t += d; }
+  USED.push(+(t - STEP_T[i]).toFixed(2));
+  if (t > STEP_T[i] + s.d) console.warn(`step ${i + 1} overruns in this pack`);
+});
+const ease = p => 1 - (1 - p) ** 3;
+const prog = (e, t) => e ? Math.min(1, Math.max(0, (t - e.t0) / e.d)) : 0;
+const stepAt = t => { let i = 0; while (i + 1 < STEPS.length && STEP_T[i + 1] <= t) i++; return i; };
+const past = (id, t, pred) => EV.filter(e => e.id === id && e.t0 <= t && pred(e));
+
+// ---------- drawing helpers ----------
+const NS = 'http://www.w3.org/2000/svg', $ = id => document.getElementById(id);
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+const text = (x, y, str, parent, { size = FS, fill = T.ink, anchor = 'start', weight = 400 } = {}) => {
+  const e = el('text', { x, y, 'text-anchor': anchor, 'dominant-baseline': 'central', 'font-size': size, 'font-family': L.font, 'font-weight': weight, fill }, parent);
+  e.textContent = str; return e; };
+const icon = (k, x, y, size, color, parent) => {
+  const e = document.importNode(new DOMParser().parseFromString(ICON[k], 'image/svg+xml').documentElement, true);
+  for (const a of ['class', 'width', 'height']) e.removeAttribute(a);
+  Object.entries({ x, y, width: size, height: size, color }).forEach(([a, v]) => e.setAttribute(a, v));
+  parent.appendChild(e); return e; };
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, t) => '#' + hex(a).map((v, i) => Math.round(v * t + hex(b)[i] * (1 - t)).toString(16).padStart(2, '0')).join('');
+const roundedPath = (pts, rad = 10) => {                 // orthogonal polyline with rounded bends
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [x, y] = pts[i], [nx, ny] = pts[i + 1];
+    const r = Math.min(rad, Math.hypot(x - px, y - py) / 2, Math.hypot(nx - x, ny - y) / 2);
+    d += ` L${x - Math.sign(x - px) * r} ${y - Math.sign(y - py) * r} Q${x} ${y} ${x + Math.sign(nx - x) * r} ${y + Math.sign(ny - y) * r}`;
+  }
+  return d + ` L${pts.at(-1)[0]} ${pts.at(-1)[1]}`;
+};
+
+// ---------- edge kinds: stroke and arrowhead ----------
+const EDGE = { blocks: { sw: 2.5, len: 14, w: 12, fill: true }, works: { sw: 2, len: 12, w: 12, fill: false, dash: [7, 6] }, handoff: { sw: 5, len: 22, w: 22, fill: true } };
+for (const s of Object.values(EDGE)) { s.sw *= P; s.len *= P; s.w *= P; s.dash = s.dash?.map(v => v * P).join(' '); }
+for (const [k, s] of Object.entries(EDGE)) {
+  const m = el('marker', { id: 'm-' + k, markerUnits: 'userSpaceOnUse', markerWidth: s.len, markerHeight: s.w, refX: s.fill ? 0 : s.len, refY: s.w / 2, orient: 'auto', overflow: 'visible' }, $('defs'));
+  el('path', s.fill ? { d: `M0 0 L${s.len} ${s.w / 2} L0 ${s.w} Z`, fill: T.line }
+                    : { d: `M0 0 L${s.len} ${s.w / 2} L0 ${s.w}`, fill: 'none', stroke: T.line, 'stroke-width': 2.2 * P, 'stroke-linejoin': 'round' }, m);
+}
+
+// ---------- build every element once; seek(t) only sets opacity and transforms ----------
+const R = {};
+// Glyph sizes are multiples of the label size, so the x-height fixed point scales them with the text.
+const IC = Math.round(FS * 0.95), BR = Math.round(FS * 0.5);
+const badge = (k, cx, cy, g) => { el('circle', { cx, cy, r: BR, fill: T.ink }, g); icon(k, cx - BR * 0.65, cy - BR * 0.65, BR * 1.3, T.bg, g); return g; };
+for (const id in G) {
+  const o = G[id], g = el('g', {}, $(o.kind === 'group' ? 'groups' : o.kind === 'edge' ? 'edges' : 'nodes'));
+  const r = R[id] = { g, state: {} };
+  const { x, y, w, h } = o;
+  if (o.type === 'map') {
+    el('rect', { x, y, width: w, height: h, rx: 14, fill: 'none', stroke: T.frame, 'stroke-width': 2 * P }, g);
+    text(x + 24, y + 42, o.label, g, { weight: 600 });
+    r.hl = el('g', {}, g);
+    el('rect', { x: x - 8, y: y - 8, width: w + 16, height: h + 16, rx: 20, fill: 'none', stroke: T.accent, 'stroke-width': 10 * P, filter: 'url(#glow)', class: 'glow' }, r.hl);
+    el('rect', { x: x - 8, y: y - 8, width: w + 16, height: h + 16, rx: 20, fill: 'none', stroke: T.accent, 'stroke-width': 4 * P }, r.hl);
+  } else if (o.type === 'fog') {
+    if (L.fog === 'lift') {
+      const f = el('g', {}, g); r.state.fogged = [f];
+      el('rect', { x, y, width: w, height: h, rx: 10, fill: T.fogFill }, f);
+      icon('fog', x + w / 2 - 32, y + h / 2 - 32, 64, T.fogLine, f);
+      el('rect', { x, y, width: w, height: h, rx: 10, fill: 'none', stroke: T.fogLine, 'stroke-width': 2 * P, 'stroke-dasharray': `${6 * P} ${6 * P}` }, g);
+    } else el('rect', { x, y, width: w, height: h, rx: 10, fill: 'none', stroke: T.fogLine, 'stroke-width': 2.5 * P, 'stroke-dasharray': `0.1 ${9 * P}`, 'stroke-linecap': 'round' }, g);
+  } else if (o.kind === 'edge') {
+    const s = EDGE[o.type], pts = o.pts.map(p => [...p]), to = G[o.to];
+    if (to.type === 'goal') { const [a, b] = pts.slice(-2), gx = to.x + to.w / 2, gy = to.y + 60, d = Math.sign(b[0] - a[0]);   // ELK ends at the box; clip to the drawn circle
+      if (d) b[0] = gx - d * Math.sqrt(Math.max(0, 57 ** 2 - (b[1] - gy) ** 2)); }
+    if (s.fill) { const [a, b] = pts.slice(-2), L2 = Math.hypot(b[0] - a[0], b[1] - a[1]); b[0] -= (b[0] - a[0]) / L2 * s.len; b[1] -= (b[1] - a[1]) / L2 * s.len; }
+    el('path', { d: roundedPath(pts), fill: 'none', stroke: T.line, 'stroke-width': s.sw, 'stroke-dasharray': s.dash || 'none', 'marker-end': `url(#m-${o.type})` }, g);
+  } else if (o.type === 'goal') {                  // BPMN end event: thick-rimmed circle
+    const cx = x + w / 2, cy = y + 60;
+    el('circle', { cx, cy, r: 54, fill: T.surface, stroke: T.ink, 'stroke-width': 6 * P }, g);
+    icon('goal', cx - 24, cy - 24, 48, T.ink, g);
+    r.label = text(cx, cy + 54 + FS * 0.95, o.label, g, { anchor: 'middle', weight: 600 });
+    r.hl = el('g', {}, g);
+    el('circle', { cx, cy, r: 68, fill: 'none', stroke: T.accent, 'stroke-width': 10 * P, filter: 'url(#glow)', class: 'glow' }, r.hl);
+    el('circle', { cx, cy, r: 68, fill: 'none', stroke: T.accent, 'stroke-width': 4 * P }, r.hl);
+  } else {                                         // tickets, session, subagent: BPMN task (rounded rect)
+    const tt = o.type.startsWith('ticket.') ? o.type.slice(7) : null, c = tt ? T[tt] : T.ink, rad = 10;
+    let resolvedBg;                                // stripe look: resolved also greys the card, under the stripe and label
+    if (!tt) el('rect', { x, y, width: w, height: h, rx: rad, fill: T.surface, stroke: T.line, 'stroke-width': 2 * P, 'stroke-dasharray': o.type === 'subagent' ? `${8 * P} ${6 * P}` : 'none' }, g);
+    else if (L.card === 'tint') el('rect', { x, y, width: w, height: h, rx: rad, fill: mix(c, T.surface, 0.14), stroke: c, 'stroke-width': 2 * P }, g);
+    else {
+      el('rect', { x, y, width: w, height: h, rx: rad, fill: T.surface, stroke: T.border, 'stroke-width': 1.5 * P }, g);
+      if (L.card === 'stripe') {
+        resolvedBg = el('rect', { x, y, width: w, height: h, rx: rad, fill: T.resolvedFill, stroke: T.border, 'stroke-width': 1.5 * P }, g);
+        el('path', { d: `M${x + 12} ${y} H${x + rad} A${rad} ${rad} 0 0 0 ${x} ${y + rad} V${y + h - rad} A${rad} ${rad} 0 0 0 ${x + rad} ${y + h} H${x + 12} Z`, fill: c }, g);
+      } else el('path', { d: `M${x} ${y + 7} V${y + rad} A${rad} ${rad} 0 0 1 ${x + rad} ${y} H${x + w - rad} A${rad} ${rad} 0 0 1 ${x + w} ${y + rad} V${y + 7} Z`, fill: c }, g);
+    }
+    const ix = x + (L.card === 'stripe' ? 26 : 18);
+    icon(tt || o.type, ix, y + h / 2 - IC / 2, IC, c, g);
+    r.label = text(ix + IC + 12, y + h / 2 + (L.card === 'bar' ? 3 : 0), o.label, g);
+    r.box = { x, y, w, h };
+    if (tt) {
+      r.state.frontier = [el('rect', { x: x - 7, y: y - 7, width: w + 14, height: h + 14, rx: rad + 7, fill: 'none', stroke: T.ink, 'stroke-width': 3.5 * P }, g)];
+      r.state.claimed = [badge('claimed', x + w - BR - 14, y + h / 2, el('g', {}, g))];   // inside the card: edges leave by the right side
+      r.state.resolved = [badge('resolved', x + w - BR - 14, y + h / 2, el('g', {}, g)), resolvedBg].filter(Boolean);
+    }
+    r.hl = el('g', {}, g);
+    el('rect', { x: x - 12, y: y - 12, width: w + 24, height: h + 24, rx: rad + 12, fill: 'none', stroke: T.accent, 'stroke-width': 10 * P, filter: 'url(#glow)', class: 'glow' }, r.hl);
+    el('rect', { x: x - 12, y: y - 12, width: w + 24, height: h + 24, rx: rad + 12, fill: 'none', stroke: T.accent, 'stroke-width': 4 * P }, r.hl);
+  }
+}
+// annotations: a callout (ink text, accent rule) with an accent leader. ELK does not place them: try below, above, right, left
+// of the target and take the first that stays on canvas and clear of every node. Callouts are opaque, so they may overlay a group frame.
+const boxes = Object.values(G).filter(o => o.kind === 'node').map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h }));
+const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const world = { x: (PAD - OX) / K, y: (PAD - OY) / K, w: (1920 - 2 * PAD) / K, h: (1080 - 2 * PAD) / K };
+for (const e of EV.filter(e => e.verb === 'annotate')) {
+  const o = G[e.id], g = el('g', {}, $('fx')), t = text(0, 0, e.text, g), bw = t.getBBox().width + 40, bh = FS * 1.9, gap = 36;
+  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  const cand = [{ x: cx - bw / 2, y: o.y + o.h + gap, lx: cx, ly: o.y + o.h }, { x: cx - bw / 2, y: o.y - bh - gap, lx: cx, ly: o.y },
+                { x: o.x + o.w + gap, y: cy - bh / 2, lx: o.x + o.w, ly: cy }, { x: o.x - bw - gap, y: cy - bh / 2, lx: o.x, ly: cy }];
+  for (const c of cand) c.x = Math.max(world.x, Math.min(world.x + world.w - bw, c.x));   // slide along the edge rather than fall off it
+  const free = c => { const b = { x: c.x, y: c.y, w: bw, h: bh };
+    return b.x >= world.x && b.y >= world.y && b.x + bw <= world.x + world.w && b.y + bh <= world.y + world.h && !boxes.some(n => n.id !== e.id && hit(b, n)); };
+  const c = cand.find(free) || (console.warn(`annotation on ${e.id}: no free position`), cand[0]);
+  g.insertBefore(el('rect', { x: c.x, y: c.y, width: bw, height: bh, rx: 8, fill: T.surface, stroke: T.accent, 'stroke-width': 2.5 * P }), t);
+  t.setAttribute('x', c.x + 20); t.setAttribute('y', c.y + bh / 2);
+  const ax = Math.max(c.x, Math.min(c.x + bw, c.lx)), ay = Math.max(c.y, Math.min(c.y + bh, c.ly));
+  el('path', { d: `M${ax} ${ay} L${c.lx} ${c.ly}`, stroke: T.accent, 'stroke-width': 2.5 * P }, g);
+  e.g = g;
+}
+
+// ---------- seek(t): pure in time ----------
+function seek(t) {
+  const step = stepAt(t);
+  for (const id in G) {
+    const o = G[id], r = R[id];
+    const vis = past(id, t, e => e.verb === 'reveal' || e.verb === 'hide').at(-1), p = ease(prog(vis, t));
+    r.g.setAttribute('opacity', !vis ? 0 : vis.verb === 'reveal' ? p : 1 - p);
+    if (o.kind === 'node') {                       // nodes scale in from 94 %; groups and edges only fade
+      const s = vis?.verb === 'reveal' ? 0.94 + 0.06 * p : 1, cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      r.g.setAttribute('transform', `translate(${cx} ${cy}) scale(${s}) translate(${-cx} ${-cy})`);
+    }
+    const ss = past(id, t, e => e.verb === 'set_state'), cur = ss.at(-1), prev = ss.at(-2), sp = ease(prog(cur, t));
+    for (const s in r.state) for (const e of r.state[s]) e.setAttribute('opacity', cur?.state === s ? sp : prev?.state === s && cur ? 1 - sp : 0);
+    const hl = EV.find(e => e.id === id && e.verb === 'highlight' && e.step === step && e.t0 <= t);
+    if (r.hl) { const hp = hl ? prog(hl, t) : 0;   // one colour pulse: glow peaks mid-animation, settles at half
+      r.hl.setAttribute('opacity', Math.min(1, hp * 2));
+      r.hl.querySelector('.glow').setAttribute('opacity', hp < 0.5 ? hp * 2 : 1 - (hp - 0.5)); }
+  }
+  for (const e of EV.filter(e => e.verb === 'annotate')) e.g.setAttribute('opacity', e.step === step && e.t0 <= t ? ease(prog(e, t)) : 0);
+}
+const frameKey = t => EV.map(e => prog(e, t).toFixed(3)).join(',') + '|' + stepAt(t);
+
+// ---------- geometric and contrast report ----------
+const lum = h => { const c = hex(h).map(v => v / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const cr = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return +((x + 0.05) / (y + 0.05)).toFixed(2); };
+function report() {
+  const types = ['grilling', 'prototype', 'research', 'task'];
+  const cards = Object.fromEntries(types.map(k => [k, L.card === 'tint' ? mix(T[k], T.surface, 0.14) : T.surface]));
+  const overflow = Object.entries(R).filter(([, r]) => r.box && r.label.getBBox().x + r.label.getBBox().width > r.box.x + r.box.w - 2 * BR - 26).map(([id]) => id);
+  const labelMin = Math.min(...Object.values(R).filter(r => r.box).map(r => r.box.w - 2 * BR - 26 - (r.label.getBBox().x + r.label.getBBox().width - r.box.x)));
+  const need = pred => Math.ceil(Math.max(...Object.entries(R).filter(([id, r]) => r.box && pred(G[id].type)).map(([, r]) => r.label.getBBox().x + r.label.getBBox().width - r.box.x + 2 * BR + 26)));
+  return { look: LOOK, needTicket: need(t => t.startsWith('ticket.')), needSmall: need(t => t === 'session' || t === 'subagent'), name: L.name, font: L.font, icons: L.icons, scale: +K.toFixed(3), fontLayout: FS, fontRendered: +(FS * K).toFixed(1), xHeight: +(XR * FS * K).toFixed(1),
+    textOnBg: cr(T.ink, T.bg), textOnCard: Object.fromEntries(types.map(k => [k, cr(T.ink, cards[k])])), accentOnBg: cr(T.accent, T.bg),
+    typeOnBg: Object.fromEntries(types.map(k => [k, cr(T[k], T.bg)])), typeOnCard: Object.fromEntries(types.map(k => [k, cr(T[k], cards[k])])),
+    fogLineOnBg: cr(T.fogLine, T.bg), fogFillOnBg: T.fogFill ? cr(T.fogFill, T.bg) : null, lineOnBg: cr(T.line, T.bg),
+    labelOverflow: overflow, tightestLabelMargin: Math.round(labelMin), stepSecondsUsed: USED };
+}
+
+// ---------- boot ----------
+$('bg').setAttribute('fill', T.bg);
+$('blur').setAttribute('stdDeviation', 7 * P);
+$('world').setAttribute('transform', `translate(${OX} ${OY}) scale(${K})`);
+Object.assign(window, { seek, frameKey, STEP_T, STEPS, TOTAL, report });
+if (Q.has('shot')) document.body.classList.add('shot');
+seek(0);
+const scrub = $('scrub'), lbl = $('lbl');
+scrub.max = TOTAL;
+const show = t => { seek(t); lbl.textContent = `${L.name} · step ${stepAt(t) + 1} · ${t.toFixed(2)} s`; };
+scrub.oninput = () => show(+scrub.value);
+let playing = false, t0;
+$('play').onclick = () => { playing = !playing; t0 = performance.now() - scrub.value * 1000; requestAnimationFrame(function f(now) {
+  if (!playing) return; const t = (now - t0) / 1000; if (t > TOTAL) { playing = false; return; } scrub.value = t; show(t); requestAnimationFrame(f); }); };
+window.READY = true;
+</script>
