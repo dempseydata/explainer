@@ -47,3 +47,7 @@ _Avoid_: TODO, missing citation
 **Finding**:
 Something the pre-capture checks report against one render: a label under the x-height floor, or an overlap. A finding stops capture unless the author accepts it; it is never fixed by the renderer.
 _Avoid_: warning, error, issue
+
+**Look**:
+Something the readability look raises: a step where a viewer who has not read the script sees something other than what the script intends. Advisory; a look never stops capture.
+_Avoid_: finding, review, warning

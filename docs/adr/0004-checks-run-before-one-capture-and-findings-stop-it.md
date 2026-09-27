@@ -8,6 +8,8 @@ The brief captured to MP4 first, then ran geometric checks, fixed layout or timi
 
 The pipeline is: validate → layout → build player → check pass → capture once → captions and narration → readability look.
 
+*Amended by ADR-0006:* the readability look is run by the skill, not the CLI, and the overrun suggestion also covers narration reading rate.
+
 ## Consequences
 
 - **Overrun is a validation check, per pack, and needs no DOM.** A step's animation time is the sum of its verbs' durations in the pack: the actions play in order, and their targets appear together (ADR-0002). When that sum exceeds `duration_s`, validation rejects the script for that pack. The rejection names the step, the pack and the animation time. It also suggests a `duration_s`: the animation time rounded up to the next 0.5 s, in a form a program can read. `/explainer-script` puts that suggestion to the author for approval, and the CLI never writes it. A longer duration only adds hold time, so fixing an overrun in one pack cannot create an overrun in another.
