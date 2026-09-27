@@ -15,7 +15,7 @@ const FPS = 30;
 const script = parse(fs.readFileSync(path.join(EXAMPLE, 'script.yaml'), 'utf8'));
 const ends = script.steps.map((s, i, all) => all.slice(0, i + 1).reduce((sum, x) => sum + x.duration_s, 0));
 const rests = ends.map(end => end - 1 / FPS);
-let browser, url;
+let browser, url, lay;
 
 before(async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-wayfinder-'));
@@ -23,6 +23,7 @@ before(async () => {
   const { code, report } = await main(['render', path.join(root, 'explainers', 'wayfinder', 'script.yaml'), '--pack', 'standard']);
   assert.equal(code, 0, JSON.stringify(report.errors));
   url = pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href;
+  lay = JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8'));
   browser = await chromium.launch();
 });
 after(() => browser?.close());
@@ -66,6 +67,61 @@ test('render plays all 12 Wayfinder steps, and nothing moves between steps', asy
 });
 
 const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));
+
+// Layout (#19): the x-height floor and ceiling are rendered pixels at 1080p (ADR-0003).
+const X_HEIGHT = { floor: 16, ceiling: 32 };
+
+test('at every step, every label\'s x-height lies between the floor and the ceiling, and nothing enters the caption band', async () => {
+  const page = await open();
+  const bandTop = 1080 - pack.caption.band_px;
+  for (const [i, t] of rests.entries()) {
+    const seen = await page.evaluate(t => {
+      seek(t);
+      const frame = document.getElementById('frame').getBoundingClientRect();
+      const scale = frame.width / 1920;
+      const shown = e => { for (; e && e.id !== 'frame'; e = e.parentElement) if (getComputedStyle(e).opacity === '0') return false; return true; };
+      const ctx = document.createElement('canvas').getContext('2d');
+      const labels = [...document.querySelectorAll('#frame text')].filter(shown).map(e => {
+        const cs = getComputedStyle(e);
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        // Font sizes are in the frame's viewBox units, which are 1080p pixels at any viewport.
+        return { text: e.textContent, x: ctx.measureText('x').actualBoundingBoxAscent };
+      });
+      const drawn = [...document.querySelectorAll('#frame *')].filter(e => e instanceof SVGGraphicsElement && !(e instanceof SVGGElement) && shown(e));
+      const bottom = Math.max(...drawn.map(e => (e.getBoundingClientRect().bottom - frame.top) / scale));
+      return { labels, bottom };
+    }, t);
+    assert.ok(seen.labels.length > 0);
+    for (const l of seen.labels) {
+      assert.ok(l.x >= X_HEIGHT.floor - 0.01 && l.x <= X_HEIGHT.ceiling + 0.01, `step ${i + 1}: "${l.text}" has x-height ${l.x.toFixed(2)} px`);
+    }
+    assert.ok(seen.bottom <= bandTop, `step ${i + 1}: drawing reaches y ${seen.bottom.toFixed(1)}, into the caption band`);
+  }
+  await page.close();
+});
+
+test('Wayfinder\'s labels are larger than the single-row layout gives, and layout.json records the chosen packing', () => {
+  const single = lay.packings.find(p => p.packing.map.length === 1);
+  assert.ok(lay.F > single.F, `F ${lay.F} against ${single.F} in one row`);
+  assert.ok(lay.packing.map.length > 1, JSON.stringify(lay.packing));
+  assert.ok(lay.F >= X_HEIGHT.floor, `F ${lay.F}`);
+  assert.deepEqual(lay.packing.map.flat(), ['r1', 'r2', 'r3']);
+});
+
+test('the fog patches keep reading order however they are declared', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-wayfinder-'));
+  fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
+  const file = path.join(root, 'explainers', 'wayfinder', 'script.yaml');
+  const yaml = fs.readFileSync(file, 'utf8');
+  const patches = ['r1', 'r2', 'r3'].map(id => yaml.split('\n').find(line => line.startsWith(`    - {id: ${id}, type: fog`)));
+  fs.writeFileSync(file, yaml.replace(patches.join('\n'), [...patches].reverse().join('\n')));
+  const { code, report } = await main(['render', file, '--pack', 'standard']);
+  assert.equal(code, 0, JSON.stringify(report.errors));
+  const reversed = JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8'));
+  assert.deepEqual(reversed.packing.map.flat(), ['r1', 'r2', 'r3']);
+  assert.deepEqual(reversed.packing, lay.packing);
+});
+
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const luminance = c => {
   const [r, g, b] = c.map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));

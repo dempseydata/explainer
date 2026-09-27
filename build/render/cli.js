@@ -213,8 +213,11 @@ function clipToCircle(a, b, c, r) {
 const annotations = script => script.steps.flatMap((step, s) => step.actions.flatMap((action, a) =>
   action.annotate ? [].concat(action.annotate.target).map(id => ({ key: `${s}.${a}.${id}`, id, text: action.annotate.text })) : []));
 
-// Every element ever revealed is laid out once (ADR-0002), so nothing moves between steps. Groups are ELK compound
-// nodes; sibling groups sit in one row, in declaration order (wrapping and first-reveal order are #19).
+// Every element ever revealed is laid out once (ADR-0002), so nothing moves between steps. Layout runs in units of one
+// rendered pixel at the x-height floor; every layout size is a multiple of F, so the result scales exactly to any F.
+// Groups that share a parent are each laid out by ELK on their own, then packed into rows; ELK lays out the level
+// above around the packed block as one fixed-size node (ADR-0003). Each row count is tried, with row breaks no edge
+// crosses, and the one giving the largest F within the area above the caption band (ADR-0007) is kept.
 async function layout(script, pack) {
   const { groups = [], nodes, edges = [] } = script.graph;
   const L = pack.layout;
@@ -239,51 +242,177 @@ async function layout(script, pack) {
     'elk.spacing.nodeNode': String(u(L.node_gap_F)), 'elk.layered.spacing.nodeNodeBetweenLayers': String(u(L.layer_gap_F)),
     'elk.spacing.edgeNode': String(u(L.edge_gap_F)), 'elk.layered.spacing.edgeNodeBetweenLayers': String(u(L.edge_gap_F)),
   };
-  const elk = {};
-  for (const g of groups) {
-    const pad = u(L.group_pad_F);
-    const top = pad + (g.label ? line0 + pad / 2 : 0);
-    elk[g.id] = { id: g.id, children: [], layoutOptions: { 'elk.padding': `[top=${top},left=${pad},bottom=${pad},right=${pad}]`, ...spacing } };
-  }
-  for (const n of nodes) {
+  const elkNode = n => {
     const look = pack.node_types[n.type];
-    if (look.shape === 'circle') {
-      // The label sits below the circle; ports at the circle's centre height let edge ends be clipped to it.
-      const r = u(look.radius_F);
-      const w = Math.max(2 * r, textWidth(weight(look), n.label, font0));
-      elk[n.id] = {
-        id: n.id, width: w, height: 2 * r + u(L.label_gap_F) + line0, layoutOptions: { 'elk.portConstraints': 'FIXED_POS' },
-        ports: [{ id: `${n.id}:in`, x: 0, y: r, width: 0, height: 0 }, { id: `${n.id}:out`, x: w, y: r, width: 0, height: 0 }],
-      };
-    } else elk[n.id] = { id: n.id, width: cardWidth, height: u(L.card_height_F) };
-  }
-  const root = {
-    id: 'root', children: [], edges: [],
-    layoutOptions: {
-      'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.hierarchyHandling': 'INCLUDE_CHILDREN', 'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.json.shapeCoords': 'ROOT', 'elk.json.edgeCoords': 'ROOT', ...spacing,
-    },
+    if (look.shape !== 'circle') return { id: n.id, width: cardWidth, height: u(L.card_height_F) };
+    // The label sits below the circle; ports at the circle's centre height let edge ends be clipped to it.
+    const r = u(look.radius_F);
+    const w = Math.max(2 * r, textWidth(weight(look), n.label, font0));
+    return {
+      id: n.id, width: w, height: 2 * r + u(L.label_gap_F) + line0, layoutOptions: { 'elk.portConstraints': 'FIXED_POS' },
+      ports: [{ id: `${n.id}:in`, x: 0, y: r, width: 0, height: 0 }, { id: `${n.id}:out`, x: w, y: r, width: 0, height: 0 }],
+    };
   };
-  for (const x of [...groups, ...nodes]) (x.parent ?? x.group ? elk[x.parent ?? x.group].children : root.children).push(elk[x.id]);
   const end = (id, port) => (typeOf(id).shape === 'circle' ? `${id}:${port}` : id);
-  for (const e of edges) root.edges.push({ id: e.id, sources: [end(e.from, 'out')], targets: [end(e.to, 'in')] });
-  const siblings = Object.values(Object.groupBy(groups, g => g.parent ?? ''));
-  siblings.forEach(row => row.slice(1).forEach((g, i) => root.edges.push({ id: `row:${g.id}`, sources: [row[i].id], targets: [g.id] })));
-  const out = await new ELK().layout(root);
 
-  const m = pack.layout.margin_px;
-  const k = Math.min((FRAME.width - 2 * m) / out.width, (FRAME.height - 2 * m) / out.height, X_HEIGHT.ceiling / F0);
-  const dx = (FRAME.width - out.width * k) / 2;
-  const dy = (FRAME.height - out.height * k) / 2;
-  const at = ([x, y]) => [x * k + dx, y * k + dy];
-  const boxes = {};
-  (function walk(n) {
-    for (const c of n.children ?? []) {
-      const [x, y] = at([c.x, c.y]);
-      boxes[c.id] = { x, y, width: c.width * k, height: c.height * k };
-      walk(c);
+  // Containers are group ids, and '' for the root. An edge belongs to the innermost container holding both its ends,
+  // and there each end is represented by the child of that container it lies in: a node of its own, or a sibling group.
+  const parentOf = Object.fromEntries([...groups.map(g => [g.id, g.parent ?? '']), ...nodes.map(n => [n.id, n.group ?? ''])]);
+  const containers = id => (id === '' ? [] : [...containers(parentOf[id]), parentOf[id]]);
+  const home = edges.map(e => {
+    const [a, b] = [containers(e.from), containers(e.to)];
+    let i = 0;
+    while (a[i + 1] !== undefined && a[i + 1] === b[i + 1]) i++;
+    return { e, at: a[i], from: a[i + 1] ?? e.from, to: b[i + 1] ?? e.to };
+  });
+
+  // Siblings are ordered by first reveal, then by the steps that set their state, then by declaration (ADR-0003).
+  const stepsOf = (id, verb) => script.steps.flatMap((step, s) =>
+    (step.actions.some(a => a[verb] && [].concat(a[verb].target ?? a[verb]).includes(id)) ? [s] : []));
+  const key = g => [stepsOf(g.id, 'reveal')[0], ...stepsOf(g.id, 'set_state'), Infinity];
+  const lexically = (a, b) => { for (let i = 0; ; i++) if (a[i] !== b[i] || a[i] === Infinity) return (a[i] - b[i]) || 0; };
+  const kids = Object.groupBy([...groups].sort((a, b) => lexically(key(a), key(b))), g => g.parent ?? '');
+  const sibling = C => id => kids[C]?.some(g => g.id === id);
+
+  const within = new Set(home.filter(h => sibling(h.at)(h.from) && sibling(h.at)(h.to)));
+
+  // A row may break after sibling i only if no edge joins a sibling up to i to one after it. The row count is what is
+  // searched (#9 rule 2): each count from one to one more than the breaks is tried, per sibling set.
+  // ponytail: row counts are multiplied across sibling sets; search each set on its own if a script ever nests many.
+  const breaksOf = {};
+  let counts = [{}];
+  for (const [C, sibs] of Object.entries(kids)) {
+    const index = id => sibs.findIndex(g => g.id === id);
+    const joined = home.filter(h => h.at === C && within.has(h)).map(h => [index(h.from), index(h.to)].sort((x, y) => x - y));
+    breaksOf[C] = sibs.slice(0, -1).map((_, i) => i).filter(i => !joined.some(([lo, hi]) => lo <= i && i < hi));
+    counts = counts.flatMap(p => breaksOf[C].concat(0).map((_, i) => ({ ...p, [C]: i + 1 })));
+  }
+  // For k rows, the one split whose widest row is narrowest: rows of one type share a height, so it gives the largest F.
+  // ponytail: siblings of mixed types are split by width alone; weigh their row heights if a script mixes them.
+  function rowsOf(C, k, widthOf, gap) {
+    const sibs = kids[C], cuts = [-1, ...breaksOf[C], sibs.length - 1];
+    const row = (a, b) => sibs.slice(cuts[a] + 1, cuts[b] + 1).map(g => g.id);
+    const span = (a, b) => row(a, b).reduce((w, id) => w + widthOf(id) + gap, -gap);
+    const memo = new Map();
+    const best = (a, k) => {
+      if (k === 1) return { w: span(a, cuts.length - 1), at: [] };
+      if (!memo.has(`${a} ${k}`)) {
+        let pick;
+        for (let b = a + 1; b <= cuts.length - k; b++) {
+          const rest = best(b, k - 1), w = Math.max(span(a, b), rest.w);
+          if (!pick || w < pick.w) pick = { w, at: [b, ...rest.at] };
+        }
+        memo.set(`${a} ${k}`, pick);
+      }
+      return memo.get(`${a} ${k}`);
+    };
+    const at = [0, ...best(0, k).at, cuts.length - 1];
+    return at.slice(1).map((b, i) => row(at[i], b));
+  }
+
+  const shift = (points, dx, dy) => points.map(([x, y]) => [x + dx, y + dy]);
+  // Lays out container C for one choice of row counts, in coordinates relative to C's own box, recording its rows in
+  // packing. A group with no sibling groups inside it lays out the same whatever the counts, so it is laid out once.
+  const leaves = {};
+  async function place(C, count, packing) {
+    const boxes = {};
+    const routes = {};
+    const gap = { x: u(L.layer_gap_F), y: u(L.node_gap_F) };
+    const inner = {};
+    for (const g of kids[C] ?? []) inner[g.id] = await (kids[g.id] ? place(g.id, count, packing) : (leaves[g.id] ??= place(g.id, count, packing)));
+    if (kids[C]) packing[C] = rowsOf(C, count[C], id => inner[id].width, gap.x);
+    // Siblings of one type share a height, and share a top within a row; widths stay natural.
+    const tall = {};
+    for (const g of kids[C] ?? []) tall[g.type] = Math.max(tall[g.type] ?? 0, inner[g.id].height);
+    const block = { width: 0, height: 0 };
+    for (const row of packing[C] ?? []) {
+      let x = 0;
+      const y = block.height && block.height + gap.y;
+      for (const id of row) {
+        const type = groups.find(g => g.id === id).type;
+        boxes[id] = { x, y, width: inner[id].width, height: tall[type] };
+        for (const [k, b] of Object.entries(inner[id].boxes)) boxes[k] = { ...b, x: b.x + x, y: b.y + y };
+        for (const [k, pts] of Object.entries(inner[id].routes)) routes[k] = shift(pts, x, y);
+        x += inner[id].width + gap.x;
+      }
+      block.width = Math.max(block.width, x - gap.x);
+      block.height = y + Math.max(...row.map(id => boxes[id].height));
     }
-  })(out);
+    // Where an edge meets an element inside the block: its circle's centre height, or its box's middle.
+    const anchorY = id => boxes[id].y + (typeOf(id).shape === 'circle' ? u(typeOf(id).radius_F) : boxes[id].height / 2);
+    // An edge between siblings (they share a row) is drawn through the gap beside its source's sibling.
+    // ponytail: a three-segment dog-leg, level with each end, so it can cross a card in the way (Wayfinder has no such
+    // edge); route it through an ELK run over the row if a real script draws one badly.
+    for (const h of home.filter(h => h.at === C && within.has(h))) {
+      const [a, b, S] = [boxes[h.e.from], boxes[h.e.to], boxes[h.from]];
+      const ahead = S.x < boxes[h.to].x;
+      const xm = ahead ? S.x + S.width + gap.x / 2 : S.x - gap.x / 2;
+      routes[h.e.id] = [[ahead ? a.x + a.width : a.x, anchorY(h.e.from)], [xm, anchorY(h.e.from)], [xm, anchorY(h.e.to)], [ahead ? b.x : b.x + b.width, anchorY(h.e.to)]];
+    }
+
+    // ELK lays out this level: its own nodes, and the packed block as one fixed-size node whose ports sit level with
+    // the elements inside it that edges reach.
+    const pad = u(L.group_pad_F);
+    const label = groups.find(g => g.id === C)?.label;
+    const graph = {
+      id: C || ':root', children: nodes.filter(n => parentOf[n.id] === C).map(elkNode), edges: [],
+      layoutOptions: {
+        'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.edgeRouting': 'ORTHOGONAL', ...spacing,
+        ...(C && { 'elk.padding': `[top=${pad + (label ? line0 + pad / 2 : 0)},left=${pad},bottom=${pad},right=${pad}]` }),
+      },
+    };
+    const outside = home.filter(h => h.at === C && !within.has(h));
+    if (kids[C]) {
+      const ports = outside.flatMap(h => [
+        ...(sibling(C)(h.from) ? [{ id: `${h.e.id}:from`, x: block.width, y: anchorY(h.e.from), width: 0, height: 0 }] : []),
+        ...(sibling(C)(h.to) ? [{ id: `${h.e.id}:to`, x: 0, y: anchorY(h.e.to), width: 0, height: 0 }] : []),
+      ]);
+      graph.children.push({ id: ':block', ...block, ports, layoutOptions: { 'elk.portConstraints': 'FIXED_POS' } });
+    }
+    for (const h of outside) {
+      graph.edges.push({ id: h.e.id, sources: [sibling(C)(h.from) ? `${h.e.id}:from` : end(h.e.from, 'out')], targets: [sibling(C)(h.to) ? `${h.e.id}:to` : end(h.e.to, 'in')] });
+    }
+    const out = await new ELK().layout(graph);
+    const at = out.children.find(c => c.id === ':block');
+    if (at) {
+      for (const b of Object.values(boxes)) Object.assign(b, { x: b.x + at.x, y: b.y + at.y });
+      for (const [k, pts] of Object.entries(routes)) routes[k] = shift(pts, at.x, at.y);
+    }
+    for (const c of out.children) if (c.id !== ':block') boxes[c.id] = { x: c.x, y: c.y, width: c.width, height: c.height };
+    for (const e of out.edges) {
+      const h = outside.find(o => o.e.id === e.id);
+      const points = e.sections.flatMap((s, i) => [...(i ? [] : [s.startPoint]), ...(s.bendPoints ?? []), s.endPoint]).map(p => [p.x, p.y]);
+      // A port on the block's side runs on, level, to the element it stands for.
+      // ponytail: the run-on is straight, so it can cross a card between the port and its element; give the element a
+      // port of its own in the inner ELK run if a real script draws one badly.
+      if (sibling(C)(h.from)) points.unshift([boxes[h.e.from].x + boxes[h.e.from].width, points[0][1]]);
+      if (sibling(C)(h.to)) points.push([boxes[h.e.to].x, points.at(-1)[1]]);
+      routes[e.id] = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
+    }
+    return { width: out.width, height: out.height, boxes, routes };
+  }
+
+  // The best packing has the largest F; then the fewest rows, so a compact story stays in one row; then the best fit.
+  const m = L.margin_px;
+  const area = { width: FRAME.width - 2 * m, height: FRAME.height - pack.caption.band_px - 2 * m };
+  const tried = [];
+  let best;
+  for (const count of counts) {
+    const packing = {};
+    const placed = await place('', count, packing);
+    const fit = Math.min(area.width / placed.width, area.height / placed.height);
+    const k = Math.min(fit, X_HEIGHT.ceiling / F0);
+    const rank = [k, -Object.values(packing).flat().length, fit];
+    tried.push({ packing, F: F0 * k });
+    const i = rank.findIndex((v, j) => v !== best?.rank[j]);
+    if (!best || rank[i] > best.rank[i]) best = { placed, packing, k, rank };
+  }
+
+  const { k, placed } = best;
+  const dx = (FRAME.width - placed.width * k) / 2;
+  const dy = m + (area.height - placed.height * k) / 2;
+  const boxes = Object.fromEntries(Object.entries(placed.boxes).map(([id, b]) => [id, { x: b.x * k + dx, y: b.y * k + dy, width: b.width * k, height: b.height * k }]));
+  const routes = Object.fromEntries(Object.entries(placed.routes).map(([id, pts]) => [id, pts.map(([x, y]) => [x * k + dx, y * k + dy])]));
   const F = F0 * k;
   const font = font0 * k;
   // ELK ends an edge at a node's box; a circle's edge ends are clipped to its drawn outline, rim included.
@@ -293,10 +422,6 @@ async function layout(script, pack) {
     const b = boxes[id];
     return { c: [b.x + b.width / 2, b.y + look.radius_F * F], r: look.radius_F * F + look.stroke_px / 2 };
   };
-  const routes = Object.fromEntries(out.edges.filter(e => !e.id.startsWith('row:')).map(e => {
-    const points = e.sections.flatMap((s, i) => [...(i ? [] : [s.startPoint]), ...(s.bendPoints ?? []), s.endPoint]).map(p => at([p.x, p.y]));
-    return [e.id, points];
-  }));
   for (const e of edges) {
     const points = routes[e.id];
     const [from, to] = [circle(e.from), circle(e.to)];
@@ -323,7 +448,7 @@ async function layout(script, pack) {
     const candidates = [
       [cx - w / 2, t.y + t.height + gap, [cx, t.y + t.height]], [cx - w / 2, t.y - h - gap, [cx, t.y]],
       [t.x + t.width + gap, cy - h / 2, [t.x + t.width, cy]], [t.x - w - gap, cy - h / 2, [t.x, cy]],
-    ].map(([x, y, anchor]) => ({ x: clamp(x, m, FRAME.width - m - w), y: clamp(y, m, FRAME.height - m - h), width: w, height: h, anchor }));
+    ].map(([x, y, anchor]) => ({ x: clamp(x, m, FRAME.width - m - w), y: clamp(y, m, FRAME.height - pack.caption.band_px - m - h), width: w, height: h, anchor }));
     const cost = c => Object.entries(boxes).filter(([id]) => nodes.some(nd => nd.id === id)).reduce((sum, [, b]) => sum + overlap(c, b), 0);
     const best = candidates.find(c => cost(c) === 0) ?? candidates.reduce((a, b) => (cost(b) < cost(a) ? b : a));
     const from = [clamp(best.anchor[0], best.x, best.x + w), clamp(best.anchor[1], best.y, best.y + h)];
@@ -332,7 +457,7 @@ async function layout(script, pack) {
 
   const pick = list => Object.fromEntries(list.map(x => [x.id, boxes[x.id]]));
   return {
-    pack: pack.name, frame: FRAME, F, font_px: font,
+    pack: pack.name, frame: FRAME, F, font_px: font, packing: best.packing, packings: tried,
     groups: pick(groups), nodes: pick(nodes), edges: Object.fromEntries(edges.map(e => [e.id, { points: routes[e.id] }])), annotations: notes,
   };
 }

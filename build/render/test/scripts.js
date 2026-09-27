@@ -95,6 +95,40 @@ steps:
 
 const NOTES = 'You write it. You review it. You write before review.\nThe team\u2019s board holds every card \u2013 drafts first.\n*Done* cards   are\narchived.\n';
 
+// A board of n sibling lanes, each a chain of two cards. The lanes are declared in `declared` order and revealed
+// in index order, one step each; every [i, j] in `links` is an edge from lane i's second card to lane j's first.
+function lanes(n, { declared = [...Array(n).keys()], links = [] } = {}) {
+  const cite = '{src: notes, quote: "write it"}';
+  const edges = [...Array(n).keys()].map(i => `    - {id: e${i}, from: c${i}a, to: c${i}b, kind: blocks, cite: ${cite}}`)
+    .concat(links.map(([i, j]) => `    - {id: l${i}${j}, from: c${i}b, to: c${j}a, kind: blocks, cite: ${cite}}`));
+  const step = reveals => `  - actions:\n${reveals.map(r => `      - {reveal: [${r}]}`).join('\n')}\n    narration: Write it.\n    duration_s: 2\n    cite: ${cite}`;
+  return `meta:
+  schema: 0.1
+  title: Lanes
+  audience: Test readers
+  outcome: Viewer sees lanes laid out in reading order
+
+sources:
+  - {id: notes, title: Synthetic notes, path: local-data/two-node/sources/notes.md}
+
+graph:
+  group_types: [map, fog]
+  node_types: [ticket.task]
+  edge_kinds: [blocks]
+  states: []
+  groups:
+    - {id: board, type: map, label: Board, cite: ${cite}}
+${declared.map(i => `    - {id: lane${i}, type: fog, parent: board, cite: ${cite}}`).join('\n')}
+  nodes:
+${[...Array(n).keys()].flatMap(i => [`    - {id: c${i}a, type: ticket.task, group: lane${i}, label: Write, cite: ${cite}}`, `    - {id: c${i}b, type: ticket.task, group: lane${i}, label: Review, cite: ${cite}}`]).join('\n')}
+  edges:
+${edges.join('\n')}
+
+steps:
+${[step(['board']), ...[...Array(n).keys()].map(i => step([`lane${i}`, `c${i}a, c${i}b, e${i}`])), ...(links.length ? [step([links.map(([i, j]) => `l${i}${j}`).join(', ')])] : [])].join('\n')}
+`;
+}
+
 function writeScript(yaml) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-'));
   const dir = path.join(root, 'explainers', 'two-node');
@@ -106,4 +140,4 @@ function writeScript(yaml) {
   return path.join(dir, 'script.yaml');
 }
 
-module.exports = { TWO_NODE, BOARD, writeScript };
+module.exports = { TWO_NODE, BOARD, lanes, writeScript };
