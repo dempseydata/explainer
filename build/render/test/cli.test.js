@@ -71,7 +71,7 @@ test('a node type the pack does not map fails render with a located error, throu
 
 test('a verb or an edge kind the pack does not map fails render and leaves no render behind', async () => {
   const cases = [
-    [TWO_NODE.replace('- {reveal: write-review}', '- {reveal: write-review}\n      - {highlight: write-review}'), 'steps[1].actions[2].highlight', /highlight.*standard/],
+    [TWO_NODE.replace('- {reveal: write-review}', '- {reveal: write-review}\n      - {focus: write-review}'), 'steps[1].actions[2].focus', /focus.*standard/],
     [TWO_NODE.replace('[blocks]', '[feeds]').replace('kind: blocks', 'kind: feeds'), 'graph.edge_kinds[0]', /feeds.*standard/],
   ];
   for (const [yaml, at, pattern] of cases) {
@@ -105,7 +105,7 @@ test('validate --pack with no such pack is a usage error', async () => {
 });
 
 // Overrun (#17, ADR-0004, ADR-0006): the suggestion is max(animation time, narration characters / 15), up to the next 0.5 s.
-// In the standard pack a reveal takes 0.5 s.
+// In the standard pack a reveal takes 0.4 s (#6).
 const withStep2 = (narration, d) => TWO_NODE.replace('narration: Then review it.\n    duration_s: 3', `narration: ${narration}\n    duration_s: ${d}`);
 const LONG = 'Write it. '.repeat(8).trim(); // 79 characters: 5.27 s at 15 cps
 const withStep1 = d => TWO_NODE.replace('narration: First, write it.\n    duration_s: 2', `narration: ${LONG}\n    duration_s: ${d}`);
@@ -116,28 +116,28 @@ async function overrun(yaml) {
 }
 
 test('a seeded overrun is rejected, naming the step, the pack and the animation time, with the suggested duration_s', async () => {
-  const { code, errors } = await overrun(withStep2('Then review.', 0.5)); // two reveals: 1 s; 12 characters: 0.8 s
+  const { code, errors } = await overrun(withStep2('Then review.', 0.5)); // two reveals: 0.8 s; 12 characters: 0.8 s
   assert.equal(code, 1);
   assert.deepEqual(errors.map(e => e.at), ['steps[1].duration_s']);
   assert.match(errors[0].message, /step 2/);
   assert.match(errors[0].message, /standard/);
-  assert.match(errors[0].message, /animation 1 s/);
+  assert.match(errors[0].message, /animation 0.8 s/);
   assert.equal(errors[0].suggested_duration_s, 1);
-  assert.equal(errors[0].animation_s, 1);
+  assert.equal(errors[0].animation_s, 0.8);
   assert.equal(errors[0].pack, 'standard');
   assert.match(errors[0].message, /animation (and narration )?runs? over/);
   assert.equal(typeof errors[0].line, 'number');
 });
 
 test('over-long narration over a short animation is rejected, with a suggestion read at 15 characters per second', async () => {
-  const { code, errors } = await overrun(withStep1(2)); // one reveal: 0.5 s
+  const { code, errors } = await overrun(withStep1(2)); // one reveal: 0.4 s
   assert.equal(code, 1);
   assert.deepEqual(errors.map(e => e.at), ['steps[0].duration_s']);
-  assert.match(errors[0].message, /animation 0.5 s/);
+  assert.match(errors[0].message, /animation 0.4 s/);
   assert.match(errors[0].message, /narration runs over/);
   assert.doesNotMatch(errors[0].message, /animation (and narration )?runs? over|overruns/);
   assert.equal(errors[0].suggested_duration_s, 5.5);
-  assert.equal(errors[0].animation_s, 0.5);
+  assert.equal(errors[0].animation_s, 0.4);
 });
 
 test('raising a step to its suggestion clears the rejection, and the check is monotone', async () => {
@@ -292,3 +292,27 @@ test('with the article extracts present locally, every quote in the Wayfinder ex
     assert.deepEqual(report.warnings, []);
     assert.equal(code, 0);
   });
+
+// The standard pack (#18): Look A, from the resolution of #6.
+const cloneExample = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-clone-'));
+  fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
+  return path.join(root, 'explainers', 'wayfinder', 'script.yaml');
+};
+
+test('validate --pack standard passes the Wayfinder example', async () => {
+  const { code, report } = await main(['validate', cloneExample(), '--pack', 'standard']);
+  assert.deepEqual(report.errors, []);
+  assert.equal(code, 0);
+});
+
+test('the standard pack lists exactly Inter (OFL) and Lucide (ISC and MIT), and explainer.html carries both notices', async () => {
+  const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));
+  assert.deepEqual(pack.licences.map(l => [l.assets, l.licence]), [['Inter', 'OFL-1.1'], ['Lucide', 'ISC AND MIT']]);
+  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'standard']);
+  assert.equal(code, 0);
+  const html = fs.readFileSync(report.written.find(p => p.endsWith('explainer.html')), 'utf8');
+  assert.deepEqual([...html.matchAll(/<!-- (.+) — (.+)\n/g)].map(m => [m[1], m[2]]), [['Inter', 'OFL-1.1'], ['Lucide', 'ISC AND MIT']]);
+  assert.match(html, /Copyright 2016 The Inter Project Authors[\s\S]*SIL OPEN FONT LICENSE Version 1\.1/);
+  assert.match(html, /ISC License[\s\S]*Lucide Icons and Contributors[\s\S]*The MIT License[\s\S]*Cole Bemis/);
+});

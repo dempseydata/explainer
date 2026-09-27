@@ -171,57 +171,216 @@ function validate(file, { draft = false, pack } = {}) {
   return { errors, warnings, script };
 }
 
-async function layout(script, pack) {
-  const graph = await new ELK().layout({
-    id: 'root',
-    layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.layered.spacing.nodeNodeBetweenLayers': '120' },
-    children: script.graph.nodes.map(n => ({ id: n.id, ...pack.node_types[n.type].size })),
-    edges: script.graph.edges.map(e => ({ id: e.id, sources: [e.from], targets: [e.to] })),
-  });
-  // ponytail: centred at pack size, no scaling; maximising label x-height is #19.
-  const dx = (FRAME.width - graph.width) / 2;
-  const dy = (FRAME.height - graph.height) / 2;
-  const nodes = Object.fromEntries(graph.children.map(n => [n.id, { x: n.x + dx, y: n.y + dy, width: n.width, height: n.height }]));
-  const edges = Object.fromEntries(graph.edges.map(e => {
-    const s = e.sections[0];
-    const points = [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map(p => [p.x + dx, p.y + dy]);
-    return [e.id, { points }];
-  }));
-  return { pack: pack.name, frame: FRAME, nodes, edges };
+// The label x-height F, in rendered pixels at 1080p (ADR-0003): the floor is a minimum, the ceiling stops small
+// scripts rendering oversized labels. Layout runs at the floor, where one layout unit is one rendered pixel, then scales.
+const X_HEIGHT = { floor: 16, ceiling: 32 };
+const packFile = (pack, file) => path.join(__dirname, 'packs', pack.name, file);
+const fontFaces = pack => Object.entries(pack.face.files).map(([weight, file]) =>
+  `@font-face{font-family:'${pack.face.family}';font-weight:${weight};src:url(data:font/woff2;base64,${fs.readFileSync(packFile(pack, file)).toString('base64')}) format('woff2')}`).join('');
+
+// Measures each text's width, and the face's x-height, per em in the pack's face in headless Chromium.
+async function measure(pack, texts) {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<style>${fontFaces(pack)}</style>`);
+    return await page.evaluate(async ({ family, texts }) => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      const width = {};
+      for (const [weight, text] of texts) {
+        ctx.font = `${weight} 100px '${family}'`;
+        if (!(await document.fonts.load(ctx.font, text)).length) throw new Error(`${family} ${weight} did not load`);
+        width[`${weight} ${text}`] = ctx.measureText(text).width / 100;
+      }
+      ctx.font = `400 100px '${family}'`;
+      return { width, xHeight: ctx.measureText('x').actualBoundingBoxAscent / 100 };
+    }, { family: pack.face.family, texts });
+  } finally {
+    await browser.close();
+  }
 }
 
-// A step's actions play in order, each starting when the previous one's animation ends;
-// the step then holds until duration_s. Returns each element's reveal window.
-function timeline(script, pack) {
-  const reveal = {};
-  let stepStart = 0;
-  for (const step of script.steps) {
-    let t = stepStart;
-    for (const action of step.actions) {
-      const [verb, target] = Object.entries(action)[0];
-      const d = pack.verbs[verb].duration_s;
-      for (const id of [].concat(target)) reveal[id] = [t, t + d];
-      t += d;
-    }
-    stepStart += step.duration_s;
+// Where a segment from a (outside) towards b first meets a circle of radius r about c.
+function clipToCircle(a, b, c, r) {
+  const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+  const [fx, fy] = [a[0] - c[0], a[1] - c[1]];
+  const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r * r;
+  const s = (-B - Math.sqrt(Math.max(0, B * B - 4 * A * C))) / (2 * A);
+  return [a[0] + s * dx, a[1] + s * dy];
+}
+
+const annotations = script => script.steps.flatMap((step, s) => step.actions.flatMap((action, a) =>
+  action.annotate ? [].concat(action.annotate.target).map(id => ({ key: `${s}.${a}.${id}`, id, text: action.annotate.text })) : []));
+
+// Every element ever revealed is laid out once (ADR-0002), so nothing moves between steps. Groups are ELK compound
+// nodes; sibling groups sit in one row, in declaration order (wrapping and first-reveal order are #19).
+async function layout(script, pack) {
+  const { groups = [], nodes, edges = [] } = script.graph;
+  const L = pack.layout;
+  const typeOf = id => pack.node_types[nodes.find(n => n.id === id)?.type] ?? {};
+  const weight = look => look.label_weight ?? 400;
+  const texts = [
+    ...nodes.map(n => [weight(pack.node_types[n.type]), n.label]),
+    ...annotations(script).map(n => [400, n.text]),
+  ];
+  const { width, xHeight } = await measure(pack, texts);
+  const textWidth = (w, text, font) => width[`${w} ${text}`] * font;
+  const F0 = X_HEIGHT.floor;
+  const font0 = F0 / xHeight;
+  const line0 = font0 * 1.2;
+  const u = v => v * F0;
+
+  // Every card shares one width: the widest label plus its icon and a badge slot.
+  const cards = nodes.filter(n => pack.node_types[n.type].shape === 'rect');
+  const cardWidth = Math.max(0, ...cards.map(n => textWidth(weight(pack.node_types[n.type]), n.label, font0)))
+    + u(2 * L.card_pad_F + L.icon_F + 2 * L.icon_gap_F + L.badge_F);
+  const spacing = {
+    'elk.spacing.nodeNode': String(u(L.node_gap_F)), 'elk.layered.spacing.nodeNodeBetweenLayers': String(u(L.layer_gap_F)),
+    'elk.spacing.edgeNode': String(u(L.edge_gap_F)), 'elk.layered.spacing.edgeNodeBetweenLayers': String(u(L.edge_gap_F)),
+  };
+  const elk = {};
+  for (const g of groups) {
+    const pad = u(L.group_pad_F);
+    const top = pad + (g.label ? line0 + pad / 2 : 0);
+    elk[g.id] = { id: g.id, children: [], layoutOptions: { 'elk.padding': `[top=${top},left=${pad},bottom=${pad},right=${pad}]`, ...spacing } };
   }
-  return { reveal, duration_s: stepStart };
+  for (const n of nodes) {
+    const look = pack.node_types[n.type];
+    if (look.shape === 'circle') {
+      // The label sits below the circle; ports at the circle's centre height let edge ends be clipped to it.
+      const r = u(look.radius_F);
+      const w = Math.max(2 * r, textWidth(weight(look), n.label, font0));
+      elk[n.id] = {
+        id: n.id, width: w, height: 2 * r + u(L.label_gap_F) + line0, layoutOptions: { 'elk.portConstraints': 'FIXED_POS' },
+        ports: [{ id: `${n.id}:in`, x: 0, y: r, width: 0, height: 0 }, { id: `${n.id}:out`, x: w, y: r, width: 0, height: 0 }],
+      };
+    } else elk[n.id] = { id: n.id, width: cardWidth, height: u(L.card_height_F) };
+  }
+  const root = {
+    id: 'root', children: [], edges: [],
+    layoutOptions: {
+      'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.hierarchyHandling': 'INCLUDE_CHILDREN', 'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.json.shapeCoords': 'ROOT', 'elk.json.edgeCoords': 'ROOT', ...spacing,
+    },
+  };
+  for (const x of [...groups, ...nodes]) (x.parent ?? x.group ? elk[x.parent ?? x.group].children : root.children).push(elk[x.id]);
+  const end = (id, port) => (typeOf(id).shape === 'circle' ? `${id}:${port}` : id);
+  for (const e of edges) root.edges.push({ id: e.id, sources: [end(e.from, 'out')], targets: [end(e.to, 'in')] });
+  const siblings = Object.values(Object.groupBy(groups, g => g.parent ?? ''));
+  siblings.forEach(row => row.slice(1).forEach((g, i) => root.edges.push({ id: `row:${g.id}`, sources: [row[i].id], targets: [g.id] })));
+  const out = await new ELK().layout(root);
+
+  const m = pack.layout.margin_px;
+  const k = Math.min((FRAME.width - 2 * m) / out.width, (FRAME.height - 2 * m) / out.height, X_HEIGHT.ceiling / F0);
+  const dx = (FRAME.width - out.width * k) / 2;
+  const dy = (FRAME.height - out.height * k) / 2;
+  const at = ([x, y]) => [x * k + dx, y * k + dy];
+  const boxes = {};
+  (function walk(n) {
+    for (const c of n.children ?? []) {
+      const [x, y] = at([c.x, c.y]);
+      boxes[c.id] = { x, y, width: c.width * k, height: c.height * k };
+      walk(c);
+    }
+  })(out);
+  const F = F0 * k;
+  const font = font0 * k;
+  // ELK ends an edge at a node's box; a circle's edge ends are clipped to its drawn outline, rim included.
+  const circle = id => {
+    const look = typeOf(id);
+    if (look.shape !== 'circle') return null;
+    const b = boxes[id];
+    return { c: [b.x + b.width / 2, b.y + look.radius_F * F], r: look.radius_F * F + look.stroke_px / 2 };
+  };
+  const routes = Object.fromEntries(out.edges.filter(e => !e.id.startsWith('row:')).map(e => {
+    const points = e.sections.flatMap((s, i) => [...(i ? [] : [s.startPoint]), ...(s.bendPoints ?? []), s.endPoint]).map(p => at([p.x, p.y]));
+    return [e.id, points];
+  }));
+  for (const e of edges) {
+    const points = routes[e.id];
+    const [from, to] = [circle(e.from), circle(e.to)];
+    if (to) points[points.length - 1] = clipToCircle(points.at(-2), points.at(-1), to.c, to.r);
+    if (from) points[0] = clipToCircle(points[1], points[0], from.c, from.r);
+  }
+
+  // Annotations are placed outside ELK: the first clear candidate (below, above, right, left, kept inside the
+  // margin, clear of every node), else the least-overlapping one.
+  const overlap = (a, b) => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
+    * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const edgeBox = pts => {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  };
+  const notes = {};
+  for (const n of annotations(script)) {
+    const t = boxes[n.id] ?? edgeBox(routes[n.id]);
+    const w = textWidth(400, n.text, font) + 2 * L.annotation_pad_F * F;
+    const h = L.annotation_height_F * F;
+    const gap = L.annotation_gap_F * F;
+    const [cx, cy] = [t.x + t.width / 2, t.y + t.height / 2];
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const candidates = [
+      [cx - w / 2, t.y + t.height + gap, [cx, t.y + t.height]], [cx - w / 2, t.y - h - gap, [cx, t.y]],
+      [t.x + t.width + gap, cy - h / 2, [t.x + t.width, cy]], [t.x - w - gap, cy - h / 2, [t.x, cy]],
+    ].map(([x, y, anchor]) => ({ x: clamp(x, m, FRAME.width - m - w), y: clamp(y, m, FRAME.height - m - h), width: w, height: h, anchor }));
+    const cost = c => Object.entries(boxes).filter(([id]) => nodes.some(nd => nd.id === id)).reduce((sum, [, b]) => sum + overlap(c, b), 0);
+    const best = candidates.find(c => cost(c) === 0) ?? candidates.reduce((a, b) => (cost(b) < cost(a) ? b : a));
+    const from = [clamp(best.anchor[0], best.x, best.x + w), clamp(best.anchor[1], best.y, best.y + h)];
+    notes[n.key] = { x: best.x, y: best.y, width: w, height: h, text: n.text, leader: [from, best.anchor] };
+  }
+
+  const pick = list => Object.fromEntries(list.map(x => [x.id, boxes[x.id]]));
+  return {
+    pack: pack.name, frame: FRAME, F, font_px: font,
+    groups: pick(groups), nodes: pick(nodes), edges: Object.fromEntries(edges.map(e => [e.id, { points: routes[e.id] }])), annotations: notes,
+  };
+}
+
+// A step's actions play in order, each starting when the previous one's animation ends; the step then holds until
+// duration_s. Returns one event per action target, and each step's [start, end).
+function timeline(script, pack) {
+  const events = [];
+  const steps = [];
+  let start = 0;
+  script.steps.forEach((step, s) => {
+    let t = start;
+    step.actions.forEach((action, a) => {
+      const [verb, arg] = Object.entries(action)[0];
+      const d = pack.verbs[verb].duration_s;
+      const withArgs = verb === 'set_state' || verb === 'annotate';
+      for (const id of [].concat(withArgs ? arg.target : arg)) {
+        events.push({ verb, id, t0: t, d, step: s, ...(verb === 'set_state' && { state: arg.state }), ...(verb === 'annotate' && { note: `${s}.${a}.${id}` }) });
+      }
+      t += d;
+    });
+    steps.push([start, start + step.duration_s]);
+    start += step.duration_s;
+  });
+  return { events, steps, duration_s: start };
 }
 
 function playerHtml(script, pack, lay) {
+  const used = new Set([...Object.values(pack.node_types), ...Object.values(pack.states)].map(look => look.icon).filter(Boolean));
+  const icons = Object.fromEntries([...used].map(name =>
+    [name, /<svg[^>]*>([\s\S]*)<\/svg>/.exec(fs.readFileSync(packFile(pack, `icons/${name}.svg`), 'utf8'))[1].trim()]));
+  const { licences, ...look } = pack;
   const data = {
-    title: script.meta.title,
-    frame: FRAME,
-    pack,
+    title: script.meta.title, frame: FRAME, pack: look, F: lay.F, font_px: lay.font_px, icons,
+    groups: (script.graph.groups ?? []).map(g => ({ ...lay.groups[g.id], id: g.id, type: g.type, label: g.label })),
     nodes: script.graph.nodes.map(n => ({ ...lay.nodes[n.id], id: n.id, type: n.type, label: n.label })),
-    edges: script.graph.edges.map(e => ({ ...lay.edges[e.id], id: e.id, kind: e.kind })),
+    edges: (script.graph.edges ?? []).map(e => ({ ...lay.edges[e.id], id: e.id, kind: e.kind })),
+    annotations: lay.annotations,
     ...timeline(script, pack),
   };
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
   const tokens = Object.entries(pack.tokens).map(([k, v]) => `--${k}:${v}`).join(';');
+  // The pack's bundled assets travel with their notices (#2, #6).
+  const notices = licences.map(l => `<!-- ${l.assets} — ${l.licence}\n\n${fs.readFileSync(packFile(pack, l.file), 'utf8').replaceAll('-->', '- ->')}-->`).join('\n');
   return `<!doctype html>
+${notices}
 <html lang="en"><head><meta charset="utf-8"><title></title>
-<style>:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}</style>
+<style>${fontFaces(pack)}:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}</style>
 </head><body>
 <svg id="frame" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FRAME.width} ${FRAME.height}"></svg>
 <script>const DATA=${json};
@@ -305,11 +464,11 @@ async function run(argv, report) {
     return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
   }
 
-  const packFile = path.join(__dirname, 'packs', String(argv[packAt + 1]), 'pack.json');
-  if ((command === 'render' || packAt >= 0) && (packAt < 0 || !fs.existsSync(packFile))) {
+  const packJson = packFile({ name: String(argv[packAt + 1]) }, 'pack.json');
+  if ((command === 'render' || packAt >= 0) && (packAt < 0 || !fs.existsSync(packJson))) {
     return usage(`${command} ${command === 'render' ? 'needs' : 'takes'} --pack <name>, one of: ${fs.readdirSync(path.join(__dirname, 'packs')).join(', ')}`);
   }
-  const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : undefined;
+  const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packJson, 'utf8')) : undefined;
 
   const { errors, warnings, script } = validate(file, { draft: command === 'validate' && draft, pack });
   report.warnings = warnings;

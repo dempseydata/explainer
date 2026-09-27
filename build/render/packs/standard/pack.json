@@ -1,22 +1,76 @@
 {
   "name": "standard",
-  "ground": "paper",
+  "about": "Look A, from the resolution of #6. Sizes are rendered pixels at 1080p (_px) or multiples of the label x-height F (_F).",
+  "ground": "bg",
   "tokens": {
-    "paper": "#ffffff",
-    "ink": "#1f2328"
+    "bg": "#ffffff",
+    "surface": "#ffffff",
+    "ink": "#1d2127",
+    "line": "#4a525e",
+    "frame": "#7d8591",
+    "fog-fill": "#e6e9ed",
+    "fog-line": "#8d949e",
+    "accent": "#c62828",
+    "grilling": "#0072b2",
+    "prototype": "#a86b00",
+    "research": "#00805e",
+    "task": "#a34f85"
   },
-  "face": "sans-serif",
-  "label_px": 32,
-  "stroke_px": 3,
-  "corner_px": 8,
-  "arrow_px": 15,
+  "face": {
+    "family": "Inter",
+    "files": { "400": "fonts/inter-latin-400-normal.woff2", "600": "fonts/inter-latin-600-normal.woff2" },
+    "text": "ink"
+  },
+  "licences": [
+    { "assets": "Inter", "licence": "OFL-1.1", "file": "licences/Inter-OFL.txt" },
+    { "assets": "Lucide", "licence": "ISC AND MIT", "file": "licences/Lucide-LICENSE.txt" }
+  ],
+  "layout": {
+    "margin_px": 60,
+    "node_gap_F": 1.1,
+    "layer_gap_F": 2,
+    "edge_gap_F": 0.85,
+    "group_pad_F": 0.85,
+    "card_height_F": 3.25,
+    "card_pad_F": 0.6,
+    "icon_F": 1.75,
+    "icon_gap_F": 0.5,
+    "badge_F": 1.8,
+    "label_gap_F": 0.5,
+    "annotation_gap_F": 2,
+    "annotation_pad_F": 1.1,
+    "annotation_height_F": 3.5
+  },
+  "group_types": {
+    "map": { "shape": "rect", "corner_px": 14, "stroke": "frame", "stroke_px": 2, "label_weight": 600 },
+    "fog": { "shape": "rect", "corner_px": 10, "stroke": "fog-line", "stroke_px": 2, "dash_px": [6, 6] }
+  },
   "node_types": {
-    "ticket.task": { "size": { "width": 240, "height": 96 }, "fill": "paper", "stroke": "ink", "text": "ink" }
+    "goal": { "shape": "circle", "radius_F": 1.9, "stroke": "ink", "stroke_px": 6, "fill": "surface", "icon": "flag", "icon_F": 1.7, "icon_colour": "ink", "label_weight": 600 },
+    "ticket.grilling": { "shape": "rect", "corner_px": 10, "stroke": "grilling", "stroke_px": 2, "fill": "grilling", "fill_opacity": 0.14, "icon": "message-circle-question", "icon_colour": "grilling" },
+    "ticket.prototype": { "shape": "rect", "corner_px": 10, "stroke": "prototype", "stroke_px": 2, "fill": "prototype", "fill_opacity": 0.14, "icon": "flask-conical", "icon_colour": "prototype" },
+    "ticket.research": { "shape": "rect", "corner_px": 10, "stroke": "research", "stroke_px": 2, "fill": "research", "fill_opacity": 0.14, "icon": "search", "icon_colour": "research" },
+    "ticket.task": { "shape": "rect", "corner_px": 10, "stroke": "task", "stroke_px": 2, "fill": "task", "fill_opacity": 0.14, "icon": "hammer", "icon_colour": "task" },
+    "session": { "shape": "rect", "corner_px": 10, "stroke": "line", "stroke_px": 2, "fill": "surface", "icon": "terminal", "icon_colour": "ink" },
+    "subagent": { "shape": "rect", "corner_px": 10, "stroke": "line", "stroke_px": 2, "dash_px": [8, 6], "fill": "surface", "icon": "git-fork", "icon_colour": "ink" }
   },
   "edge_kinds": {
-    "blocks": { "stroke": "ink" }
+    "blocks": { "stroke": "line", "stroke_px": 2.5, "head": "filled", "head_px": [14, 12] },
+    "works": { "stroke": "line", "stroke_px": 2, "dash_px": [7, 6], "head": "open", "head_px": [12, 12] },
+    "handoff": { "stroke": "line", "stroke_px": 5, "head": "filled", "head_px": [22, 22] }
+  },
+  "states": {
+    "fogged": { "mark": "slot", "fill": "fog-fill", "icon": "cloud-fog", "icon_px": 64, "icon_colour": "fog-line" },
+    "clear": { "mark": "none" },
+    "frontier": { "mark": "ring", "stroke": "ink", "stroke_px": 3.5, "offset_px": 4 },
+    "claimed": { "mark": "badge", "fill": "ink", "icon": "user-round", "icon_colour": "bg" },
+    "resolved": { "mark": "badge", "fill": "ink", "icon": "check", "icon_colour": "bg" }
   },
   "verbs": {
-    "reveal": { "duration_s": 0.5 }
+    "reveal": { "duration_s": 0.4, "scale_from": 0.94 },
+    "hide": { "duration_s": 0.3 },
+    "set_state": { "duration_s": 0.4 },
+    "highlight": { "duration_s": 0.6, "stroke": "accent", "stroke_px": 4, "offset_px": 12, "glow_px": 7 },
+    "annotate": { "duration_s": 0.4, "fill": "surface", "stroke": "accent", "stroke_px": 2.5, "corner_px": 8 }
   }
 }
