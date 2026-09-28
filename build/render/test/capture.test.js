@@ -48,10 +48,9 @@ function cues(srt) {
   });
 }
 
-test('render writes explainer.mp4, captions.srt and narration.md beside the player and layout', () => {
-  assert.deepEqual(report.written.map(p => path.basename(p)).sort(),
-    ['captions.srt', 'explainer.html', 'explainer.mp4', 'layout.json', 'narration.md']);
-  for (const p of report.written) assert.equal(path.dirname(p), out);
+test('render writes explainer.mp4, captions.srt and narration.md beside the player, layout, keyframes and review.md', () => {
+  assert.deepEqual(report.written.map(p => path.relative(out, p)).sort(),
+    ['captions.srt', 'explainer.html', 'explainer.mp4', 'keyframes/step-01.png', 'keyframes/step-02.png', 'layout.json', 'narration.md', 'review.md']);
 });
 
 test('the MP4 is 1920×1080 at 30 fps, and its frame count is the total duration × 30, final hold included', () => {

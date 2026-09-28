@@ -1,7 +1,7 @@
 // The player: seek(t) draws exactly the frame at t; frameKey(t) changes exactly when its pixels do.
 // Inlined into explainer.html after `const DATA = {...}`. Every colour is a pack token, painted as var(--token);
 // every size is a rendered pixel (_px) or a multiple of the label x-height F (_F). Each element's group carries
-// data-id, and its drawn outline data-outline.
+// data-id, and its drawn outline data-outline; each annotation's group carries data-note.
 const NS = 'http://www.w3.org/2000/svg';
 const svg = document.getElementById('frame');
 const pack = DATA.pack;
@@ -137,7 +137,7 @@ for (const n of DATA.nodes) {
 const notes = {};
 for (const [key, a] of Object.entries(DATA.annotations)) {
   const look = pack.verbs.annotate;
-  const g = notes[key] = add('g', { opacity: 0 }, layers.notes);
+  const g = notes[key] = add('g', { opacity: 0, 'data-note': '' }, layers.notes);
   add('line', { x1: a.leader[0][0], y1: a.leader[0][1], x2: a.leader[1][0], y2: a.leader[1][1], fill: 'none', stroke: paint(look.stroke), 'stroke-width': look.stroke_px }, g);
   add('rect', { x: a.x, y: a.y, width: a.width, height: a.height, rx: look.corner_px, fill: paint(look.fill), stroke: paint(look.stroke), 'stroke-width': look.stroke_px }, g);
   text(a.x + L.annotation_pad_F * F, a.y + a.height / 2, a.text, 400, g);

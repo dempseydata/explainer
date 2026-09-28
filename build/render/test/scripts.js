@@ -130,6 +130,38 @@ ${[step(['board']), ...[...Array(n).keys()].map(i => step([`lane${i}`, `c${i}a, 
 `;
 }
 
+// A grid of ticket.task cards, `rows` chains of `cols` joined by blocks edges, all revealed in step 1. `label` replaces
+// the first card's; `annotate` adds a step 2 that annotates the centre card with that text.
+function grid(rows, cols, { label, annotate } = {}) {
+  const cite = '{src: notes, quote: "write it"}';
+  const cells = [...Array(rows).keys()].flatMap(r => [...Array(cols).keys()].map(c => [r, c]));
+  const edges = cells.filter(([, c]) => c < cols - 1).map(([r, c]) => [`e${r}${c}`, `n${r}${c}`, `n${r}${c + 1}`]);
+  const step = actions => `  - actions:\n${actions.map(a => `      - ${a}`).join('\n')}\n    narration: Write it.\n    duration_s: 2\n    cite: ${cite}`;
+  return `meta:
+  schema: 0.1
+  title: Grid
+  audience: Test readers
+  outcome: Viewer sees a grid of cards
+
+sources:
+  - {id: notes, title: Synthetic notes, path: local-data/two-node/sources/notes.md}
+
+graph:
+  group_types: []
+  node_types: [ticket.task]
+  edge_kinds: [blocks]
+  states: []
+  nodes:
+${cells.map(([r, c], i) => `    - {id: n${r}${c}, type: ticket.task, label: ${i === 0 && label ? label : 'Write'}, cite: ${cite}}`).join('\n')}
+  edges:
+${edges.map(([id, from, to]) => `    - {id: ${id}, from: ${from}, to: ${to}, kind: blocks, cite: ${cite}}`).join('\n')}
+
+steps:
+${[step([`{reveal: [${cells.map(([r, c]) => `n${r}${c}`).join(', ')}]}`, `{reveal: [${edges.map(e => e[0]).join(', ')}]}`]),
+  ...(annotate ? [step([`{annotate: {target: n${rows >> 1}${cols >> 1}, text: ${annotate}}}`])] : [])].join('\n')}
+`;
+}
+
 function writeScript(yaml) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-'));
   const dir = path.join(root, 'explainers', 'two-node');
@@ -157,4 +189,4 @@ function psnr(a, b) {
   return Number(/average:(\S+)/.exec(log)[1].replace('inf', 'Infinity'));
 }
 
-module.exports = { TWO_NODE, BOARD, lanes, writeScript, open, psnr };
+module.exports = { TWO_NODE, BOARD, lanes, grid, writeScript, open, psnr };

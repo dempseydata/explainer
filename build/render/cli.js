@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// The explainer CLI. Commands: validate <script>, render <script> --pack <name>, fetch <url> <extract-path> [--overwrite].
+// The explainer CLI. Commands: validate <script>, render <script> --pack <name> [--accept-findings | --frame <graph|1,6,12>],
+// fetch <url> <extract-path> [--overwrite].
 // The machine-readable report goes to stdout as JSON; human-readable lines go to stderr.
 // validate --pack <name> also checks the pack maps the script and that no step overruns in it; render always does.
-// render writes layout.json, explainer.html, explainer.mp4, captions.srt and narration.md to
-// <root>/local-data/<slug>/render/<pack>/, and reports what it captured under `capture`.
-// Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 70 internal error.
+// render writes to <root>/local-data/<slug>/render/<pack>/: layout.json, explainer.html, keyframes/step-NN.png and
+// review.md, then, unless the check pass found something, explainer.mp4, captions.srt and narration.md. It reports its
+// `findings` and, when it captured, `capture`. --accept-findings captures anyway. --frame writes only frames/*.png, a draft
+// may be given, and it never captures.
+// Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 3 findings stopped capture, 70 internal error.
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const os = require('node:os');
@@ -215,7 +218,7 @@ function clipToCircle(a, b, c, r) {
   return [a[0] + s * dx, a[1] + s * dy];
 }
 
-const annotations = script => script.steps.flatMap((step, s) => step.actions.flatMap((action, a) =>
+const annotations = script => (script.steps ?? []).flatMap((step, s) => step.actions.flatMap((action, a) =>
   action.annotate ? [].concat(action.annotate.target).map(id => ({ key: `${s}.${a}.${id}`, id, text: action.annotate.text })) : []));
 
 // Every element ever revealed is laid out once (ADR-0002), so nothing moves between steps. Layout runs in units of one
@@ -272,7 +275,7 @@ async function layout(script, pack) {
   });
 
   // Siblings are ordered by first reveal, then by the steps that set their state, then by declaration (ADR-0003).
-  const stepsOf = (id, verb) => script.steps.flatMap((step, s) =>
+  const stepsOf = (id, verb) => (script.steps ?? []).flatMap((step, s) =>
     (step.actions.some(a => a[verb] && [].concat(a[verb].target ?? a[verb]).includes(id)) ? [s] : []));
   const key = g => [stepsOf(g.id, 'reveal')[0], ...stepsOf(g.id, 'set_state'), Infinity];
   const lexically = (a, b) => { for (let i = 0; ; i++) if (a[i] !== b[i] || a[i] === Infinity) return (a[i] - b[i]) || 0; };
@@ -520,24 +523,93 @@ ${fs.readFileSync(path.join(__dirname, 'controls.html'), 'utf8')}</body></html>
 `;
 }
 
+// Hands `use` a way to open the player bare at 1920×1080, as capture loads it (ADR-0007), and a scratch directory.
+async function withPlayer(html, use) {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  let dir;
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-player-'));
+    fs.writeFileSync(path.join(dir, 'explainer.html'), html);
+    return await use(async () => {
+      const page = await browser.newPage({ viewport: FRAME });
+      await page.goto(`${pathToFileURL(path.join(dir, 'explainer.html')).href}?bare`);
+      await page.evaluate(() => document.fonts.ready);
+      return page;
+    }, dir);
+  } finally {
+    await browser.close();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Run in the page: seeks to t and measures what the player draws there. It returns the labels whose x-height is under
+// the floor; each pair of boxes that belong to different things and overlap (a node is its outline and label, a group
+// its label, an annotation its box); and the caption's line count.
+function measureFrame({ t, floor }) {
+  seek(t);
+  const shown = e => { for (; e.id !== 'frame'; e = e.parentElement) if (getComputedStyle(e).opacity === '0') return false; return true; };
+  const ctx = document.createElement('canvas').getContext('2d');
+  const small = [];
+  for (const e of document.querySelectorAll('#frame text:not([data-caption])')) {
+    if (!shown(e)) continue;
+    const cs = getComputedStyle(e);
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const x = ctx.measureText('x').actualBoundingBoxAscent;
+    if (x < floor - 0.01) small.push({ text: e.textContent, x });
+  }
+  const nodes = new Set(DATA.nodes.map(n => n.id));
+  const boxes = [];
+  for (const g of document.querySelectorAll('#frame [data-id], #frame [data-note]')) {
+    const label = g.querySelector(':scope > text');
+    const id = g.dataset.id;
+    const [name, parts] = id === undefined ? [`the annotation "${label.textContent}"`, [g.querySelector(':scope > rect')]]
+      : nodes.has(id) ? [`node ${id} ("${label.textContent}")`, [g.querySelector(':scope > [data-outline]'), label]]
+        : [`group ${id}'s label ("${label?.textContent}")`, label ? [label] : []];
+    if (!parts.length || !shown(g)) continue;
+    const b = parts.map(p => p.getBBox());
+    boxes.push({ name, x: Math.min(...b.map(r => r.x)), y: Math.min(...b.map(r => r.y)),
+      right: Math.max(...b.map(r => r.x + r.width)), bottom: Math.max(...b.map(r => r.y + r.height)) });
+  }
+  const overlaps = [];
+  boxes.forEach((a, i) => boxes.slice(i + 1).forEach(b => {
+    if (Math.min(a.right, b.right) - Math.max(a.x, b.x) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y) > 0.5) overlaps.push([a.name, b.name]);
+  }));
+  return { small, overlaps, lines: document.querySelectorAll('#frame [data-caption] tspan').length };
+}
+
+// The check pass (ADR-0004, ADR-0007): at each frame's time, measures the bare player and shoots it as a PNG. A finding
+// is reported once, at the first frame that shows it; findings are not ranked.
+async function checkPass(html, frames) {
+  return withPlayer(html, async open => {
+    const page = await open();
+    const shots = [];
+    const findings = new Map();
+    const find = (key, step, check, message) => findings.has(key) || findings.set(key, { step, check, message });
+    for (const { step, t } of frames) {
+      const m = await page.evaluate(measureFrame, { t, floor: X_HEIGHT.floor });
+      shots.push(await page.screenshot({ type: 'png' }));
+      for (const l of m.small) find(`x ${l.text}`, step, 'x-height', `"${l.text}" has an x-height of ${l.x.toFixed(1)} px, under the ${X_HEIGHT.floor} px floor`);
+      for (const [a, b] of m.overlaps) find(`o ${a} ${b}`, step, 'overlap', `${a} overlaps ${b}`);
+      if (m.lines > 2) find(`c ${step}`, step, 'caption', `the caption wraps to ${m.lines} lines in the pack's face; the band holds two`);
+    }
+    return { shots, findings: [...findings.values()] };
+  });
+}
+
+// review.md (ADR-0006): the CLI writes its `## Findings` once, before capture; /explainer-render appends `## Look` after.
+const reviewMd = (script, pack, findings) => `# Review: ${script.meta.title}, ${pack.name} pack\n\n## Findings\n\n${findings.length
+  ? `| Step | Check | Finding | Status |\n| --- | --- | --- | --- |\n${findings.map(f =>
+    `| ${f.step} | ${f.check} | ${f.message.replaceAll('|', '\\|')} | ${f.accepted ? 'accepted' : 'stopped capture'} |\n`).join('')}`
+  : 'Nothing to report.\n'}`;
+
 // Captures the player to an MP4 at 1920×1080 and 30 fps (ADR-0001), through the bare page (ADR-0007). The page says
 // which frames differ: each distinct frameKey is screenshotted once, through CDP as JPEG q90, over up to `workers` pages
 // on disjoint time slices, since seek(t) is pure. ffmpeg's concat demuxer holds each shot for its run, and -frames:v
 // fixes the count, final hold included. Each shot is read at 30 fps, not image2's default 25, and the fps filter places
 // it: both keep a run's first frame on its own frame number, where -r 30 alone moved step boundaries a frame early. Returns the MP4's bytes and what was captured.
 async function capture(html, frames, workers) {
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch();
-  let dir;
-  try {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-capture-'));
-    fs.writeFileSync(path.join(dir, 'explainer.html'), html);
-    const open = async () => {
-      const page = await browser.newPage({ viewport: FRAME });
-      await page.goto(`${pathToFileURL(path.join(dir, 'explainer.html')).href}?bare`);
-      await page.evaluate(() => document.fonts.ready);
-      return page;
-    };
+  return withPlayer(html, async (open, dir) => {
     const probe = await open();
     const keys = await probe.evaluate(({ frames, fps }) => Array.from({ length: frames }, (_, f) => frameKey(f / fps)), { frames, fps: FPS });
     await probe.close();
@@ -564,10 +636,7 @@ async function capture(html, frames, workers) {
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-frames:v', String(frames), 'explainer.mp4'], { cwd: dir, encoding: 'utf8' });
     if (ffmpeg.status !== 0) throw new Error(`ffmpeg: ${ffmpeg.error?.message ?? ffmpeg.stderr}`);
     return { mp4: fs.readFileSync(path.join(dir, 'explainer.mp4')), frames, screenshots: shots.length, workers: n };
-  } finally {
-    await browser.close();
-    if (dir) fs.rmSync(dir, { recursive: true, force: true });
-  }
+  });
 }
 
 // h:mm:ss,mmm from seconds.
@@ -642,7 +711,10 @@ async function main(argv, { workers = 4 } = {}) {
 async function run(argv, report, workers) {
   const draft = argv.includes('--draft');
   const packAt = argv.indexOf('--pack');
-  const [command, file, ...rest] = argv.filter((a, i) => a !== '--draft' && a !== '--overwrite' && (packAt < 0 || (i !== packAt && i !== packAt + 1)));
+  const frameAt = argv.indexOf('--frame');
+  const frame = frameAt < 0 ? undefined : String(argv[frameAt + 1]);
+  const [command, file, ...rest] = argv.filter((a, i) => !['--draft', '--overwrite', '--accept-findings'].includes(a)
+    && ![packAt, frameAt].some(at => at >= 0 && (i === at || i === at + 1)));
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
   if (command === 'fetch' && file && rest[0]) {
     // Fetched third-party text lives only in gitignored <root>/local-data/<slug>/sources/ (#8, ADR-0009).
@@ -656,6 +728,9 @@ async function run(argv, report, workers) {
     return fetchExtract(file, extract, report, overwrite);
   }
   if (!['validate', 'render'].includes(command) || !file) return usage('usage: explainer validate <script> [--pack <name>] | explainer render <script> --pack <name> | explainer fetch <url> <extract-path> [--overwrite]');
+  if (frame !== undefined && (command !== 'render' || !/^(graph|\d+(,\d+)*)$/.test(frame))) {
+    return usage(`render --frame takes graph or a list of steps, such as 1,6,12: --frame ${frame}`);
+  }
   if (!fs.existsSync(file)) return usage(`no such script: ${file}`);
   if (!['explainers', 'local-data'].includes(path.basename(path.resolve(file, '../..')))) {
     return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
@@ -667,28 +742,60 @@ async function run(argv, report, workers) {
   }
   const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packJson, 'utf8')) : undefined;
 
-  const { errors, warnings, script } = validate(file, { draft: command === 'validate' && draft, pack });
+  // --frame takes a draft: Checkpoint 2 renders the graph before any step exists (ADR-0005).
+  const { errors, warnings, script } = validate(file, { draft: (command === 'validate' && draft) || frame !== undefined, pack });
   report.warnings = warnings;
   if (errors.length) return { code: 1, report: { ...report, errors } };
   if (command === 'validate') return { code: 0, report };
 
   const out = path.join(rootOf(file), 'local-data', path.basename(path.dirname(path.resolve(file))), 'render', pack.name);
-  // Build every output before writing any, so a failure leaves no half-written render.
+  const write = (name, content) => {
+    const to = path.join(out, name);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.writeFileSync(to, content);
+    report.written.push(to);
+  };
+  const restOf = ([, end]) => end - 1 / FPS; // a step's last frame (ADR-0004)
+  const png = step => `${step === 'graph' ? step : `step-${String(step).padStart(2, '0')}`}.png`;
   const lay = await layout(script, pack);
+
+  if (frame !== undefined) {
+    const count = script.steps?.length ?? 0;
+    const wanted = frame === 'graph' ? [] : frame.split(',').map(Number);
+    const missing = wanted.find(n => n < 1 || n > count);
+    if (missing !== undefined) return usage(`--frame ${frame}: the script has ${count} steps, so no step ${missing}`);
+    // graph is one step that reveals every declared element at once: no states, no transients, no caption.
+    const ids = ['groups', 'nodes', 'edges'].flatMap(k => (script.graph[k] ?? []).map(e => e.id));
+    const shown = frame === 'graph' ? { ...script, steps: [{ actions: [{ reveal: ids }], narration: '', duration_s: pack.verbs.reveal.duration_s + 1 }] } : script;
+    const spans = timeline(shown, pack).steps;
+    const frames = frame === 'graph' ? [{ step: 'graph', t: restOf(spans[0]) }] : wanted.map(n => ({ step: n, t: restOf(spans[n - 1]) }));
+    const { shots, findings } = await checkPass(playerHtml(shown, pack, lay), frames);
+    report.findings = findings;
+    fs.rmSync(path.join(out, 'frames'), { recursive: true, force: true }); // the last --frame run's PNGs, as below
+    shots.forEach((shot, i) => write(`frames/${png(frames[i].step)}`, shot));
+    return { code: 0, report };
+  }
+
   const html = playerHtml(script, pack, lay);
   const { steps, duration_s } = timeline(script, pack);
-  // The check pass (#22) runs here, on the player, before the one capture (ADR-0004).
+  const { shots, findings } = await checkPass(html, steps.map((span, i) => ({ step: i + 1, t: restOf(span) })));
+  const accept = argv.includes('--accept-findings');
+  report.findings = accept ? findings.map(f => ({ ...f, accepted: true })) : findings;
+  // Everything the check pass needs is built before anything is written. Its outputs are written before capture, so the
+  // readability look can read the keyframes while capture runs, and review.md is written once (ADR-0004, ADR-0006).
+  // The last render's files go first, so none of them sits stale beside this one's.
+  for (const name of ['keyframes', 'review.md', 'explainer.mp4', 'captions.srt', 'narration.md']) fs.rmSync(path.join(out, name), { recursive: true, force: true });
+  write('layout.json', JSON.stringify(lay, null, 2) + '\n');
+  write('explainer.html', html);
+  shots.forEach((shot, i) => write(`keyframes/${png(i + 1)}`, shot));
+  write('review.md', reviewMd(script, pack, report.findings));
+  if (findings.length && !accept) return { code: 3, report };
+
   const { mp4, ...captured } = await capture(html, Math.round(duration_s * FPS), workers);
   report.capture = captured;
-  const outputs = {
-    'layout.json': JSON.stringify(lay, null, 2) + '\n', 'explainer.html': html, 'explainer.mp4': mp4,
-    'captions.srt': captionsSrt(script, steps), 'narration.md': narrationMd(script, steps),
-  };
-  fs.mkdirSync(out, { recursive: true });
-  for (const [name, content] of Object.entries(outputs)) {
-    fs.writeFileSync(path.join(out, name), content);
-    report.written.push(path.join(out, name));
-  }
+  write('explainer.mp4', mp4);
+  write('captions.srt', captionsSrt(script, steps));
+  write('narration.md', narrationMd(script, steps));
   return { code: 0, report };
 }
 
@@ -699,6 +806,7 @@ if (require.main === module) {
     const line = (kind, e) => console.error(`${kind}: ${e.at ? `${e.at}${e.line ? ` (line ${e.line})` : ''}: ` : ''}${e.message}`);
     for (const e of report.errors) line('error', e);
     for (const w of report.warnings) line('warning', w);
+    for (const f of report.findings ?? []) console.error(`${f.accepted ? 'accepted finding' : 'finding'}: ${f.step === 'graph' ? 'graph' : `step ${f.step}`}: ${f.check}: ${f.message}`);
     for (const w of report.written) console.error(`wrote ${w}`);
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = code;

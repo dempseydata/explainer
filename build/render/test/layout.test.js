@@ -7,9 +7,11 @@ const { parse } = require('yaml');
 const { main } = require('../cli.js');
 const { lanes, writeScript } = require('./scripts.js');
 
+// Layout is judged by its properties whatever the check pass finds (check.test.js tests that), so findings are accepted:
+// four chained lanes cannot wrap, and their labels sit under the x-height floor.
 async function render(yaml) {
   const file = writeScript(yaml);
-  const { code, report } = await main(['render', file, '--pack', 'standard']);
+  const { code, report } = await main(['render', file, '--pack', 'standard', '--accept-findings']);
   assert.equal(code, 0, JSON.stringify(report.errors));
   return { script: parse(yaml), lay: JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8')) };
 }
