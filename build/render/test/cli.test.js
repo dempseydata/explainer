@@ -24,12 +24,12 @@ test('validate fails an unresolved edge end with a located error', async () => {
   assert.match(report.errors[0].message, /reveiw/);
 });
 
-test('render writes explainer.html and layout.json in the standard pack', async () => {
+test('render writes explainer.html and layout.json, with the capture and narration outputs, in the standard pack', async () => {
   const script = writeScript(TWO_NODE);
   const { code, report } = await main(['render', script, '--pack', 'standard']);
   assert.equal(code, 0);
   const out = path.join(path.dirname(script), '../../local-data/two-node/render/standard');
-  assert.deepEqual(report.written.sort(), [path.join(out, 'explainer.html'), path.join(out, 'layout.json')]);
+  assert.deepEqual(report.written.sort(), ['captions.srt', 'explainer.html', 'explainer.mp4', 'layout.json', 'narration.md'].map(f => path.join(out, f)));
   const layout = JSON.parse(fs.readFileSync(path.join(out, 'layout.json'), 'utf8'));
   assert.deepEqual(Object.keys(layout.nodes).sort(), ['review', 'write']);
   assert.deepEqual(Object.keys(layout.edges), ['write-review']);

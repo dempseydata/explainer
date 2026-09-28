@@ -1,13 +1,12 @@
 // Seam 2: explainer.html's page contract — seek(t) and frameKey(t) — in headless Chromium.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require('playwright');
 const { main } = require('../cli.js');
-const { writeScript, TWO_NODE } = require('./scripts.js');
+const { writeScript, TWO_NODE, open: openAt, psnr } = require('./scripts.js');
 
 const FPS = 30;
 const DURATION_S = 5; // the two-node script's steps: 2 s + 3 s
@@ -22,22 +21,15 @@ before(async () => {
 });
 after(() => browser.close());
 
-async function open() {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  const requests = [];
-  page.on('request', r => requests.push(r.url()));
-  await page.goto(url);
-  return { page, requests };
-}
+const open = () => openAt(browser, url);
 
 const shot = page => page.screenshot({ type: 'png' });
 
-function psnr(a, b) {
+// PSNR between two PNG buffers.
+function psnrOf(a, b) {
   fs.writeFileSync(path.join(tmp, 'a.png'), a);
   fs.writeFileSync(path.join(tmp, 'b.png'), b);
-  const log = spawnSync('ffmpeg', ['-hide_banner', '-i', path.join(tmp, 'a.png'), '-i', path.join(tmp, 'b.png'),
-    '-lavfi', 'psnr', '-f', 'null', '-']).stderr.toString();
-  return Number(/average:(\S+)/.exec(log)[1].replace('inf', 'Infinity'));
+  return psnr(path.join(tmp, 'a.png'), path.join(tmp, 'b.png'));
 }
 
 test('explainer.html makes no network request and exposes seek(t) and frameKey(t)', async () => {
@@ -59,7 +51,7 @@ test('purity: a cold seek to t matches a sequentially reached t at >= 50 dB PSNR
   for (const f of picks) {
     const cold = await open();
     await cold.page.evaluate(t => seek(t), f / FPS);
-    const db = psnr(await shot(cold.page), sequential[f]);
+    const db = psnrOf(await shot(cold.page), sequential[f]);
     assert.ok(db >= 50, `frame ${f}: ${db} dB`);
     await cold.page.close();
   }

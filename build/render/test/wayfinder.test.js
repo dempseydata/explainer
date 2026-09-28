@@ -15,13 +15,16 @@ const FPS = 30;
 const script = parse(fs.readFileSync(path.join(EXAMPLE, 'script.yaml'), 'utf8'));
 const ends = script.steps.map((s, i, all) => all.slice(0, i + 1).reduce((sum, x) => sum + x.duration_s, 0));
 const rests = ends.map(end => end - 1 / FPS);
-let browser, url, lay;
+let browser, url, lay, captured, seconds;
 
 before(async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-wayfinder-'));
   fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
+  const started = Date.now();
   const { code, report } = await main(['render', path.join(root, 'explainers', 'wayfinder', 'script.yaml'), '--pack', 'standard']);
+  seconds = (Date.now() - started) / 1000; // the whole render: validate, layout, player, capture and encode
   assert.equal(code, 0, JSON.stringify(report.errors));
+  captured = report.capture;
   url = `${pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href}?bare`; // the frame alone, as capture loads it
   lay = JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8'));
   browser = await chromium.launch();
@@ -64,6 +67,13 @@ test('render plays all 12 Wayfinder steps, and nothing moves between steps', asy
   }
   assert.equal(Object.keys(boxes).length, script.graph.groups.length + script.graph.nodes.length + script.graph.edges.length);
   await page.close();
+});
+
+// ADR-0001's budget is a re-render in under 2 minutes; it measured 18.1 s for the standard pack. Well inside is half.
+test('the standard-pack Wayfinder render captures all 74 s in well under ADR-0001\'s 2-minute budget', () => {
+  assert.equal(captured.frames, ends.at(-1) * FPS);
+  assert.equal(ends.at(-1), 74);
+  assert.ok(seconds < 60, `render took ${seconds} s`);
 });
 
 const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));

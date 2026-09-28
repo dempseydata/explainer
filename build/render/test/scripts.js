@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const TWO_NODE = `meta:
   schema: 0.1
@@ -140,4 +141,20 @@ function writeScript(yaml) {
   return path.join(dir, 'script.yaml');
 }
 
-module.exports = { TWO_NODE, BOARD, lanes, writeScript };
+// A 1920×1080 page at url with its fonts loaded, and every request it makes.
+async function open(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  const requests = [];
+  page.on('request', r => requests.push(r.url()));
+  await page.goto(url);
+  await page.evaluate(() => document.fonts.ready);
+  return { page, requests };
+}
+
+// PSNR in dB between two image files; Infinity when identical.
+function psnr(a, b) {
+  const log = spawnSync('ffmpeg', ['-hide_banner', '-i', a, '-i', b, '-lavfi', 'psnr', '-f', 'null', '-']).stderr.toString();
+  return Number(/average:(\S+)/.exec(log)[1].replace('inf', 'Infinity'));
+}
+
+module.exports = { TWO_NODE, BOARD, lanes, writeScript, open, psnr };

@@ -2,10 +2,14 @@
 // The explainer CLI. Commands: validate <script>, render <script> --pack <name>, fetch <url> <extract-path> [--overwrite].
 // The machine-readable report goes to stdout as JSON; human-readable lines go to stderr.
 // validate --pack <name> also checks the pack maps the script and that no step overruns in it; render always does.
+// render writes layout.json, explainer.html, explainer.mp4, captions.srt and narration.md to
+// <root>/local-data/<slug>/render/<pack>/, and reports what it captured under `capture`.
 // Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 70 internal error.
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { parseDocument, LineCounter } = require('yaml');
 const ELK = require('elkjs');
 const Ajv = require('ajv');
@@ -13,6 +17,7 @@ const Ajv = require('ajv');
 const checkSchema = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(require('./schema.json'));
 
 const FRAME = { width: 1920, height: 1080 };
+const FPS = 30;
 
 // Before matching, quotes and extracts fold whitespace, case, Markdown emphasis and code marks,
 // and typographic punctuation (ADR-0002).
@@ -515,6 +520,71 @@ ${fs.readFileSync(path.join(__dirname, 'controls.html'), 'utf8')}</body></html>
 `;
 }
 
+// Captures the player to an MP4 at 1920×1080 and 30 fps (ADR-0001), through the bare page (ADR-0007). The page says
+// which frames differ: each distinct frameKey is screenshotted once, through CDP as JPEG q90, over up to `workers` pages
+// on disjoint time slices, since seek(t) is pure. ffmpeg's concat demuxer holds each shot for its run, and -frames:v
+// fixes the count, final hold included. Each shot is read at 30 fps, not image2's default 25, and the fps filter places
+// it: both keep a run's first frame on its own frame number, where -r 30 alone moved step boundaries a frame early. Returns the MP4's bytes and what was captured.
+async function capture(html, frames, workers) {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  let dir;
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-capture-'));
+    fs.writeFileSync(path.join(dir, 'explainer.html'), html);
+    const open = async () => {
+      const page = await browser.newPage({ viewport: FRAME });
+      await page.goto(`${pathToFileURL(path.join(dir, 'explainer.html')).href}?bare`);
+      await page.evaluate(() => document.fonts.ready);
+      return page;
+    };
+    const probe = await open();
+    const keys = await probe.evaluate(({ frames, fps }) => Array.from({ length: frames }, (_, f) => frameKey(f / fps)), { frames, fps: FPS });
+    await probe.close();
+    const first = new Map(); // each distinct key, and the first frame that shows it
+    keys.forEach((k, f) => first.has(k) || first.set(k, f));
+    const shots = [...first.values()];
+    const shot = new Map([...first.keys()].map((k, i) => [k, `${i}.jpg`]));
+    const n = Math.min(workers, shots.length);
+    const slice = Math.ceil(shots.length / n);
+    await Promise.all(Array.from({ length: n }, async (_, w) => {
+      const page = await open();
+      const cdp = await page.context().newCDPSession(page);
+      for (const f of shots.slice(w * slice, (w + 1) * slice)) {
+        await page.evaluate(t => seek(t), f / FPS);
+        const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 90, optimizeForSpeed: true });
+        fs.writeFileSync(path.join(dir, shot.get(keys[f])), Buffer.from(data, 'base64'));
+      }
+    }));
+    const runs = [];
+    keys.forEach((k, f) => (f && k === keys[f - 1] ? runs.at(-1).count++ : runs.push({ k, count: 1 })));
+    fs.writeFileSync(path.join(dir, 'list.txt'), runs.map(r => `file '${shot.get(r.k)}'\noption framerate ${FPS}\nduration ${r.count / FPS}\n`).join('')
+      + `file '${shot.get(runs.at(-1).k)}'\noption framerate ${FPS}\n`);
+    const ffmpeg = spawnSync('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', 'list.txt', '-vf', `fps=${FPS}`,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-frames:v', String(frames), 'explainer.mp4'], { cwd: dir, encoding: 'utf8' });
+    if (ffmpeg.status !== 0) throw new Error(`ffmpeg: ${ffmpeg.error?.message ?? ffmpeg.stderr}`);
+    return { mp4: fs.readFileSync(path.join(dir, 'explainer.mp4')), frames, screenshots: shots.length, workers: n };
+  } finally {
+    await browser.close();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// h:mm:ss,mmm from seconds.
+const stamp = s => new Date(Math.round(s * 1000)).toISOString().slice(11, 23).replace('.', ',');
+
+// One cue per step, timed from step durations (#12); the MP4 burns the same text in (ADR-0007).
+const captionsSrt = (script, steps) => steps.map(([from, to], i) => `${i + 1}\n${stamp(from)} --> ${stamp(to)}\n${script.steps[i].narration}\n`).join('\n');
+
+// Every narration line with its citations: each quote and the source it is checked against.
+function narrationMd(script, steps) {
+  const source = Object.fromEntries(script.sources.map(s => [s.id, s]));
+  const where = s => [s.url ?? s.path, s.version && `at ${s.version}`].filter(Boolean).join(' ');
+  return `# ${script.meta.title}\n\n${script.steps.map((step, i) => `## Step ${i + 1} · ${+steps[i][0].toFixed(1)}–${+steps[i][1].toFixed(1)} s\n\n${step.narration}\n\n${
+    [].concat(step.cite).map(c => `- "${c.quote}" — ${source[c.src].title}\n`).join('')}\n`).join('')}## Sources\n\n${
+    script.sources.map(s => `- **${s.id}**: ${s.title}. ${where(s)}\n`).join('')}`;
+}
+
 // Writes a source's text straight to disk with no model in the path (ADR-0005, ADR-0009):
 // HTTP plus pandoc's plain text first, then headless Chromium's innerText; under 100 words either way, it fails.
 async function fetchExtract(url, file, report, overwrite) {
@@ -559,16 +629,17 @@ async function fetchExtract(url, file, report, overwrite) {
   return { code: 0, report: { ...report, words: count } };
 }
 
-async function main(argv) {
+// workers: the most pages capture uses at once (ADR-0001's knee is four).
+async function main(argv, { workers = 4 } = {}) {
   const report = { errors: [], warnings: [], written: [] };
   try {
-    return await run(argv, report);
+    return await run(argv, report, workers);
   } catch (e) {
     return { code: 70, report: { ...report, errors: [{ message: String(e) }] } };
   }
 }
 
-async function run(argv, report) {
+async function run(argv, report, workers) {
   const draft = argv.includes('--draft');
   const packAt = argv.indexOf('--pack');
   const [command, file, ...rest] = argv.filter((a, i) => a !== '--draft' && a !== '--overwrite' && (packAt < 0 || (i !== packAt && i !== packAt + 1)));
@@ -604,7 +675,15 @@ async function run(argv, report) {
   const out = path.join(rootOf(file), 'local-data', path.basename(path.dirname(path.resolve(file))), 'render', pack.name);
   // Build every output before writing any, so a failure leaves no half-written render.
   const lay = await layout(script, pack);
-  const outputs = { 'layout.json': JSON.stringify(lay, null, 2) + '\n', 'explainer.html': playerHtml(script, pack, lay) };
+  const html = playerHtml(script, pack, lay);
+  const { steps, duration_s } = timeline(script, pack);
+  // The check pass (#22) runs here, on the player, before the one capture (ADR-0004).
+  const { mp4, ...captured } = await capture(html, Math.round(duration_s * FPS), workers);
+  report.capture = captured;
+  const outputs = {
+    'layout.json': JSON.stringify(lay, null, 2) + '\n', 'explainer.html': html, 'explainer.mp4': mp4,
+    'captions.srt': captionsSrt(script, steps), 'narration.md': narrationMd(script, steps),
+  };
   fs.mkdirSync(out, { recursive: true });
   for (const [name, content] of Object.entries(outputs)) {
     fs.writeFileSync(path.join(out, name), content);
