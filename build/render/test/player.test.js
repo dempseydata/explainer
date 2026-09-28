@@ -10,13 +10,17 @@ const { writeScript, TWO_NODE, open: openAt, psnr } = require('./scripts.js');
 
 const FPS = 30;
 const DURATION_S = 5; // the two-node script's steps: 2 s + 3 s
-let browser, url, tmp;
+let browser, url, pencil, tmp;
 
 before(async () => {
-  const { report } = await main(['render', writeScript(TWO_NODE), '--pack', 'standard']);
-  const html = report.written.find(p => p.endsWith('explainer.html'));
-  url = `${pathToFileURL(html).href}?bare`; // the frame alone, as capture loads it (ADR-0007)
-  tmp = path.dirname(html);
+  const bare = async name => {
+    const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', name]);
+    assert.equal(code, 0, JSON.stringify(report));
+    return `${pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href}?bare`; // the frame alone, as capture loads it (ADR-0007)
+  };
+  url = await bare('standard');
+  pencil = await bare('pencil');
+  tmp = path.dirname(new URL(url).pathname);
   browser = await chromium.launch();
 });
 after(() => browser.close());
@@ -32,11 +36,13 @@ function psnrOf(a, b) {
   return psnr(path.join(tmp, 'a.png'), path.join(tmp, 'b.png'));
 }
 
-test('explainer.html makes no network request and exposes seek(t) and frameKey(t)', async () => {
-  const { page, requests } = await open();
-  assert.deepEqual(requests, [url]);
-  assert.deepEqual(await page.evaluate(() => [typeof seek, typeof frameKey]), ['function', 'function']);
-  await page.close();
+test('explainer.html makes no network request and exposes seek(t) and frameKey(t), in each pack', async () => {
+  for (const at of [url, pencil]) {
+    const { page, requests } = await openAt(browser, at);
+    assert.deepEqual(requests, [at]);
+    assert.deepEqual(await page.evaluate(() => [typeof seek, typeof frameKey]), ['function', 'function']);
+    await page.close();
+  }
 });
 
 test('purity: a cold seek to t matches a sequentially reached t at >= 50 dB PSNR', async () => {
@@ -75,6 +81,46 @@ test('frameKey changes exactly when the pixels do: constant through a hold, chan
   assert.notEqual(key(0.1), key(0.2), 'step 1 reveal is changing');
   assert.notEqual(key(2.6), key(2.7), 'step 2 second reveal is changing');
   assert.equal(key(3.1), key(4.9), 'step 2 holds to the end');
+});
+
+// The pencil pack (#23): its lines boil at 8 fps, redrawn from a seed per element, layer and tick, so frameKey carries the
+// tick while anything is drawn. The sweep runs to 2.2 s: step 1's reveal from its onset, its boiling hold, and the step
+// change into step 2's reveal at 2 s.
+test('pencil: frameKey changes exactly when the pixels do, and in a hold the lines boil at 8 fps', async () => {
+  const { page } = await openAt(browser, pencil);
+  const frames = [];
+  for (let f = 0; f <= 2.2 * FPS; f++) {
+    const key = await page.evaluate(t => (seek(t), frameKey(t)), f / FPS);
+    frames.push({ key, png: await shot(page) });
+  }
+  await page.close();
+  for (let f = 1; f < frames.length; f++) {
+    const keyChanged = frames[f].key !== frames[f - 1].key;
+    const pixelsChanged = !frames[f].png.equals(frames[f - 1].png);
+    assert.equal(keyChanged, pixelsChanged, `frame ${f}: key ${keyChanged ? '' : 'un'}changed, pixels ${pixelsChanged ? '' : 'un'}changed`);
+  }
+  // Step 1 holds from the end of its reveal (0.9 s) to its end (2 s): the frame changes at each eighth of a second.
+  const changes = [];
+  for (let f = 30; f < 60; f++) if (frames[f].key !== frames[f - 1].key) changes.push(f);
+  assert.deepEqual(changes, [30, 34, 38, 42, 45, 49, 53, 57], 'the first frame of each eighth of a second');
+});
+
+test('pencil: purity: a cold seek to t matches a sequentially reached t at >= 50 dB PSNR', async () => {
+  const picks = [0.4, 1.5, 2.2, 2.7, 4.9].map(t => Math.round(t * FPS)); // mid-reveal, boiling hold, mid-reveal ×2, final hold
+  const sequential = {};
+  const { page } = await openAt(browser, pencil);
+  for (let f = 0; f <= Math.max(...picks); f++) {
+    await page.evaluate(t => seek(t), f / FPS);
+    if (picks.includes(f)) sequential[f] = await shot(page);
+  }
+  await page.close();
+  for (const f of picks) {
+    const cold = await openAt(browser, pencil);
+    await cold.page.evaluate(t => seek(t), f / FPS);
+    const db = psnrOf(await shot(cold.page), sequential[f]);
+    assert.ok(db >= 50, `frame ${f}: ${db} dB`);
+    await cold.page.close();
+  }
 });
 
 // The step-through page (ADR-0007): the same file without ?bare.

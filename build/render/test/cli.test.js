@@ -301,11 +301,14 @@ const cloneExample = () => {
   return path.join(root, 'explainers', 'wayfinder', 'script.yaml');
 };
 
-test('validate --pack standard passes the Wayfinder example', async () => {
-  const { code, report } = await main(['validate', cloneExample(), '--pack', 'standard']);
-  assert.deepEqual(report.errors, []);
-  assert.equal(code, 0);
-});
+// The pencil pack (#23) maps the identical script: no edits.
+for (const pack of ['standard', 'pencil']) {
+  test(`validate --pack ${pack} passes the Wayfinder example`, async () => {
+    const { code, report } = await main(['validate', cloneExample(), '--pack', pack]);
+    assert.deepEqual(report.errors, []);
+    assert.equal(code, 0);
+  });
+}
 
 test('the standard pack lists exactly Inter (OFL) and Lucide (ISC and MIT), and explainer.html carries both notices', async () => {
   const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));
@@ -316,4 +319,17 @@ test('the standard pack lists exactly Inter (OFL) and Lucide (ISC and MIT), and 
   assert.deepEqual([...html.matchAll(/<!-- (.+) — (.+)\n/g)].map(m => [m[1], m[2]]), [['Inter', 'OFL-1.1'], ['Lucide', 'ISC AND MIT']]);
   assert.match(html, /Copyright 2016 The Inter Project Authors[\s\S]*SIL OPEN FONT LICENSE Version 1\.1/);
   assert.match(html, /ISC License[\s\S]*Lucide Icons and Contributors[\s\S]*The MIT License[\s\S]*Cole Bemis/);
+});
+
+test('the pencil pack lists exactly Kalam (OFL) and rough.js (MIT), and explainer.html carries both notices and rough.js inlined', async () => {
+  const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/pencil/pack.json'), 'utf8'));
+  assert.deepEqual(pack.licences.map(l => [l.assets, l.licence]), [['Kalam', 'OFL-1.1'], ['rough.js', 'MIT']]);
+  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'pencil']);
+  assert.equal(code, 0, JSON.stringify(report));
+  const html = fs.readFileSync(report.written.find(p => p.endsWith('explainer.html')), 'utf8');
+  assert.deepEqual([...html.matchAll(/<!-- (.+) — (.+)\n/g)].map(m => [m[1], m[2]]), [['Kalam', 'OFL-1.1'], ['rough.js', 'MIT']]);
+  assert.match(html, /Copyright \(c\) 2014,? Indian Type Foundry[\s\S]*SIL OPEN FONT LICENSE Version 1\.1/);
+  assert.match(html, /MIT License[\s\S]*Copyright \(c\) 2019 Preet Shihn/);
+  assert.match(html, /<script>[^<]*var rough=/, 'rough.js is inlined, not fetched');
+  assert.doesNotMatch(JSON.stringify(pack), /dots/, 'no rough.js dots fill (ADR-0001)');
 });

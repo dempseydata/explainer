@@ -1,0 +1,91 @@
+{
+  "name": "pencil",
+  "about": "Look D, from the resolution of #5. Sizes are rendered pixels at 1080p (_px) or multiples of the label x-height F (_F). Glyphs are our own geometry in a 48-unit box (_u), stroked through rough.js. A highlight ellipse is a multiple of its node's box (_box).",
+  "ground": "paper",
+  "tokens": {
+    "paper": "#f5f2e9",
+    "grain": "#d9d4c5",
+    "graphite": "#2f2f31",
+    "line": "#38383a",
+    "faint": "#b9b5ab",
+    "accent": "#b3261e",
+    "grilling": "#2f6db3",
+    "prototype": "#c9962a",
+    "research": "#3f7f3a",
+    "task": "#7d4f9a"
+  },
+  "face": {
+    "family": "Kalam",
+    "files": { "400": "fonts/kalam-latin-400-normal.woff2" },
+    "text": "graphite",
+    "halo": "paper",
+    "halo_px": 7
+  },
+  "caption": { "band_px": 150, "font_px": 42, "line_px": 56, "weight": 400 },
+  "licences": [
+    { "assets": "Kalam", "licence": "OFL-1.1", "file": "licences/Kalam-OFL.txt" },
+    { "assets": "rough.js", "licence": "MIT", "file": "licences/roughjs-LICENSE.txt" }
+  ],
+  "libraries": ["roughjs/bundled/rough.js"],
+  "paper": { "grain": "grain", "frequency": 0.8, "octaves": 3, "seed": 7, "opacity": 0.35 },
+  "rough": { "boil_fps": 8, "roughness": 1.3, "hachure_gap_px": 8, "hachure_px": 1.6, "glyph_px": 2.4, "glyph_hachure_gap_u": 4, "glyph_hachure_u": 1.2, "wipe_pad_px": 24 },
+  "layout": {
+    "margin_px": 60,
+    "node_gap_F": 2.2,
+    "layer_gap_F": 2.5,
+    "edge_gap_F": 1,
+    "group_pad_F": 1.1,
+    "card_height_F": 4,
+    "card_pad_F": 0.8,
+    "icon_F": 2.6,
+    "icon_gap_F": 0.6,
+    "badge_F": 2.5,
+    "label_gap_F": 0.9,
+    "annotation_gap_F": 2,
+    "annotation_pad_F": 0.6,
+    "annotation_height_F": 3
+  },
+  "glyphs": {
+    "flag": [{ "d": "M10 2 V46" }, { "d": "M10 4 L40 13 L10 23 Z", "fill": "accent" }],
+    "grilling": [{ "d": "M6 6 H42 V32 H22 L12 42 L14 32 H6 Z" }, { "d": "M19 14 C19 8 29 8 29 14 C29 18 24 18 24 22 M24 26 V27" }],
+    "prototype": [{ "d": "M18 4 V18 L6 42 H42 L30 18 V4 M13 4 H35 M11 32 H37" }],
+    "research": [{ "d": "M33 20 A13 13 0 1 1 7 20 A13 13 0 1 1 33 20 M29 29 L44 44" }],
+    "task": [{ "d": "M18 12 L30 2 L40 12 L28 22 Z M24 17 L6 42" }],
+    "session": [{ "d": "M8 14 L20 24 L8 34 M24 36 H40" }],
+    "fork": [{ "d": "M24 4 V22 L8 44 M24 22 L40 44" }],
+    "at": [{ "d": "M31 24 A7 7 0 1 1 17 24 A7 7 0 1 1 31 24 M31 17 V28 C31 34 42 33 42 24 A18 18 0 1 0 33 40" }],
+    "tick": [{ "d": "M4 26 L18 42 L44 8" }]
+  },
+  "group_types": {
+    "map": { "shape": "rect", "stroke": "line", "stroke_px": 2.6, "roughness": 1.2, "double_px": 5 },
+    "fog": { "shape": "rect", "stroke": "faint", "stroke_px": 2.2, "dash_px": [2, 10], "roughness": 0.8 }
+  },
+  "node_types": {
+    "goal": { "shape": "circle", "radius_F": 2.8, "stroke": "line", "stroke_px": 2.4, "glyph": "flag", "glyph_F": 2.6 },
+    "ticket.grilling": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "hachure": "grilling", "glyph": "grilling" },
+    "ticket.prototype": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "hachure": "prototype", "glyph": "prototype" },
+    "ticket.research": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "hachure": "research", "glyph": "research" },
+    "ticket.task": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "hachure": "task", "glyph": "task" },
+    "session": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "glyph": "session" },
+    "subagent": { "shape": "rect", "stroke": "line", "stroke_px": 2.4, "dash_px": [8, 8], "glyph": "fork" }
+  },
+  "edge_kinds": {
+    "blocks": { "stroke": "line", "stroke_px": 2.6, "head": "filled", "head_px": [18, 14] },
+    "works": { "stroke": "line", "stroke_px": 1.8, "dash_px": [9, 9], "head": "open", "head_px": [16, 14] },
+    "handoff": { "stroke": "line", "stroke_px": 4.5, "head": "open", "head_px": [26, 26], "roughness": 1.6 }
+  },
+  "states": {
+    "fogged": { "mark": "none" },
+    "clear": { "mark": "none" },
+    "frontier": { "mark": "ring", "stroke": "graphite", "stroke_px": 4.2, "offset_px": 5, "roughness": 1.6 },
+    "claimed": { "mark": "corner", "glyph": "at", "stroke": "graphite", "stroke_px": 2.4, "fill": "paper", "size_F": 2.2, "glyph_F": 1.76 },
+    "resolved": { "mark": "badge", "glyph": "tick", "stroke": "graphite", "stroke_px": 4.5 }
+  },
+  "verbs": {
+    "reveal": { "duration_s": 0.9 },
+    "hide": { "duration_s": 0.5 },
+    "set_state": { "duration_s": 0.6 },
+    "highlight": { "duration_s": 0.7, "stroke": "accent", "stroke_px": 3.2, "offset_px": 6, "roughness": 2.2, "ellipse_box": [1.2, 1.5], "ellipse_circle_box": [1.3, 1] },
+    "annotate": { "duration_s": 0.7, "stroke": "accent", "stroke_px": 2.4, "text": "accent", "head_px": [16, 14] }
+  }
+}

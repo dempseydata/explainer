@@ -493,11 +493,13 @@ function timeline(script, pack) {
   return { events, steps, duration_s: start };
 }
 
+const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+
 function playerHtml(script, pack, lay) {
   const used = new Set([...Object.values(pack.node_types), ...Object.values(pack.states)].map(look => look.icon).filter(Boolean));
   const icons = Object.fromEntries([...used].map(name =>
     [name, /<svg[^>]*>([\s\S]*)<\/svg>/.exec(fs.readFileSync(packFile(pack, `icons/${name}.svg`), 'utf8'))[1].trim()]));
-  const { licences, ...look } = pack;
+  const { licences, libraries = [], ...look } = pack;
   const data = {
     title: script.meta.title, frame: FRAME, pack: look, F: lay.F, font_px: lay.font_px, icons,
     groups: (script.graph.groups ?? []).map(g => ({ ...lay.groups[g.id], id: g.id, type: g.type, label: g.label })),
@@ -511,13 +513,19 @@ function playerHtml(script, pack, lay) {
   const tokens = Object.entries(pack.tokens).map(([k, v]) => `--${k}:${v}`).join(';');
   // The pack's bundled assets travel with their notices (#2, #6).
   const notices = licences.map(l => `<!-- ${l.assets} — ${l.licence}\n\n${fs.readFileSync(packFile(pack, l.file), 'utf8').replaceAll('-->', '- ->')}-->`).join('\n');
+  // A pack's libraries are npm dependencies, inlined so the page makes no request (#1); their notices are above.
+  const scripts = libraries.map(lib => `<script>${fs.readFileSync(require.resolve(lib), 'utf8')}</script>\n`).join('');
+  // Procedural paper (#5): static fractal noise in the grain token over the ground, so it never boils.
+  const P = pack.paper;
+  const grain = P && rgbOf(pack.tokens[P.grain]).map(c => (c / 255).toFixed(4));
+  const paper = P ? ` url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${FRAME.width}' height='${FRAME.height}'><filter id='p' x='0' y='0' width='1' height='1'><feTurbulence type='fractalNoise' baseFrequency='${P.frequency}' numOctaves='${P.octaves}' seed='${P.seed}'/><feColorMatrix values='0 0 0 0 ${grain[0]} 0 0 0 0 ${grain[1]} 0 0 0 0 ${grain[2]} 0 0 0 ${P.opacity} 0'/></filter><rect width='100%' height='100%' filter='url(#p)'/></svg>`)}") 0 0/100% 100%` : '';
   return `<!doctype html>
 ${notices}
 <html lang="en"><head><meta charset="utf-8"><title></title>
-<style>${fontFaces(pack)}:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}#frame{background:var(--${pack.ground})}</style>
+<style>${fontFaces(pack)}:root{${tokens}}html,body{margin:0;background:var(--${pack.ground})}svg{display:block;width:100%;height:auto}#frame{background:var(--${pack.ground})${paper}}</style>
 </head><body>
 <svg id="frame" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FRAME.width} ${FRAME.height}"></svg>
-<script>const DATA=${json};
+${scripts}<script>const DATA=${json};
 ${fs.readFileSync(path.join(__dirname, 'player.js'), 'utf8')}</script>
 ${fs.readFileSync(path.join(__dirname, 'controls.html'), 'utf8')}</body></html>
 `;
