@@ -11,7 +11,7 @@ stages:
     skills: [grilling, domain-modeling, research, prototype]
     paths: [docs/adr/, CONTEXT.md]
   - name: Build
-    commands: [implement, code-review, ponytail-review, diagnosing-bugs, ponytail-audit]
+    commands: [mp-night-shift, implement, code-review, ponytail-review, diagnosing-bugs, ponytail-audit]
     skills: [tdd, code-review, playwright-cli]
     paths: [build/]
   - name: Release
@@ -161,18 +161,19 @@ Entered from **Design** (or straight from Ideate for a product with no visual su
 
 ## Build
 
-Starts where code starts, at `implement`.
+Starts where code starts: at `implement` for one ticket, or at `mp-night-shift` for a ticket set.
 
 | Step | Skill |
 | --- | --- |
-| Build | `implement`, with `tdd` as the red-green engine |
+| Build, a ticket set unattended (the usual case after `to-tickets`) | `/mp-night-shift <spec>` (dempsey-skills). A prescan, then one decision sitting where you settle every cross-ticket contract no ADR fixes and authorise pushes, tracker writes and the end state. Then per ticket: a fresh implementer and reviewer running the rows below, a commit, and the ticket closed. It ends with a handover. A blocker pushes to your phone and the shift works on; reply in the session to unblock. Works the `ready-for-agent` tickets only |
+| Build, one ticket or at the keyboard | `implement`, with `tdd` as the red-green engine |
 | Model output is load-bearing | see **Evaluation** below — `tdd` cannot test a prompt |
 | Acceptance, story level (review path) | Scenarios whose criteria are UI-observable become **Playwright tests** in the repo, named by story and criterion so the coverage matrix is traceable in code, run before the ticket closes. The `playwright-cli` skill writes and runs them — the repeatable gate. The `playwright` MCP plugin walks one scenario interactively with screenshots — the artefact for a human reviewer. Not interchangeable. `tdd` at the seams stays underneath as the agent's own gate |
 | Before commit | `code-review`, then `/ponytail-review` |
 | Something breaks | `diagnosing-bugs` |
 | Quality loop | `improve-codebase-architecture` + `/ponytail-audit` → back to `to-tickets` |
 
-`ponytail` is always on. The Plan and Build chain is supplied by the `mattpocock-skills@mattpocock` plugin at user scope; `claude plugin update mattpocock-skills@mattpocock` to refresh. **Never copy plugin skills into `.claude/skills/`** — a copy is a snapshot that goes stale silently.
+`ponytail` is always on. The Plan and Build chain is supplied by the `mattpocock-skills@mattpocock` plugin at user scope; `claude plugin update mattpocock-skills@mattpocock` to refresh. `mp-night-shift` comes from `dempsey-skills@dempsey` and rides on that chain: it needs `/setup-matt-pocock-skills` run in the product. **Never copy plugin skills into `.claude/skills/`** — a copy is a snapshot that goes stale silently.
 
 ## Release
 
