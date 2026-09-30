@@ -8,10 +8,14 @@ The spec says the skills run the CLI, but not how either reaches a machine. Expl
 
 **The CLI** goes on PATH with `npm link` in `build/render`. The link points at the working copy, so an edit to the CLI takes effect with no reinstall.
 
+*Amended by ADR-0011:* the skills run the CLI inside the plugin, bootstrapped by `cli/setup.sh` (ADR-0013), so neither route needs it on PATH. `npm link` in `cli/` is the developer's route for running it by hand.
+
 **The skills** have two routes, and a machine uses one:
 
 - **Plugin**, for anyone using Explainer. The repo is its own marketplace: `claude plugin marketplace add dempseydata/explainer`, then `claude plugin install explainer@explainer`. The skill is invoked as `/explainer:explainer-script`. A plugin install is a copy, so it changes only on `claude plugin update`.
 - **Symlink**, for working on the skills. Link `build/skill/<name>` into `~/.claude/skills/<name>`. The skill is invoked as `/explainer-script`, and an edit takes effect in the next session.
+
+*Amended by ADR-0011:* the symlink points at `skills/<name>/`, and the plugin finds every folder under `skills/` without a list in `plugin.json`.
 
 ## Consequences
 
@@ -19,6 +23,8 @@ The spec says the skills run the CLI, but not how either reaches a machine. Expl
 - **One route per machine.** With both installed, two copies of the skill are live and which one fires is arbitrary.
 - **Each new skill joins both routes.** `.claude-plugin/plugin.json` lists every folder under `build/skill/`, and the symlink step names it.
 - **The plugin reads the repo at its default branch.** Whatever is on `main` is what `claude plugin update` installs.
+
+*Amended by ADR-0011 and ADR-0013:* the plugin route needs no separate CLI install; the skills run the CLI inside the plugin, and `npm link` in `cli/` is the developer's route only. `plugin.json` lists no skill folders; every folder under `skills/` is found.
 
 ## Considered options
 

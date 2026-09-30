@@ -25,7 +25,7 @@ has run. If a product cannot meet this, it is a private-forever project and star
 `project-template/`, not from here.
 
 ## Phase layout
-`docs/ideation/` → `docs/definition/` → `docs/design/` → `build/`.
+`docs/ideation/` → `docs/definition/` → `docs/design/` → the plugin at the root: `skills/<name>/` and `cli/` (ADR-0011).
 Context from earlier phases informs later ones — don't engage on design without reading the
 definition, don't engage on build without reading the design decisions. `docs/why.md`
 is the story the README used to tell: why it was built, how, and what was reversed.

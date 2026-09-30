@@ -273,7 +273,7 @@ test('a source path that is absolute or climbs with .. leaves the root and fails
 });
 
 // The Wayfinder example (#15): its SKILL.md is vendored beside it; the article extracts are gitignored.
-const EXAMPLE = path.join(__dirname, '../../../explainers/wayfinder');
+const EXAMPLE = path.join(__dirname, '../../explainers/wayfinder');
 
 test('the Wayfinder example validates in a fresh clone, warning only for the absent article extracts', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-clone-'));

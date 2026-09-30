@@ -153,7 +153,7 @@ test('render --frame graph takes a draft with no steps (Checkpoint 2), and --fra
   assert.deepEqual(written(draft, graph.report), ['frames/graph.png']);
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-wayfinder-'));
-  fs.cpSync(path.join(__dirname, '../../../explainers/wayfinder'), path.join(root, 'explainers', 'wayfinder'), { recursive: true });
+  fs.cpSync(path.join(__dirname, '../../explainers/wayfinder'), path.join(root, 'explainers', 'wayfinder'), { recursive: true });
   const wayfinder = path.join(root, 'explainers', 'wayfinder', 'script.yaml');
   const { code, report } = await render(wayfinder, '--frame', '1,6,12');
   assert.equal(code, 0, JSON.stringify(report.errors));

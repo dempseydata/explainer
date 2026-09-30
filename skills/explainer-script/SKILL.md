@@ -11,11 +11,15 @@ This skill currently runs Intent → Grounding → Checkpoint 1. After the autho
 
 ## The CLI
 
-Everything deterministic is the `explainer` CLI (`build/render/cli.js` in the explainer repo; `npm link` there puts it on PATH). If `explainer` is not found, stop and say so. Each command prints a JSON report on stdout: `errors` (each with `message`, `at`, `line`), `warnings`, `written`, and for `fetch`, `words`. Exit 0 is success, 1 a validation or fetch failure, 2 a usage error or refusal, 70 an internal error (pandoc missing, Chromium failing to launch): on 70, stop and report it to the author, and never fall back to another fetch tool. Read the report; never guess.
+Everything deterministic is the `explainer` CLI, in the plugin's `cli/` folder; never call `explainer` from PATH. Find it from this skill's base directory, `<skill-dir>`, with `CLI="$(cd -P "<skill-dir>/../../cli" && pwd)"`. Shell state does not carry between calls, so set `CLI` in every call that runs the CLI, as `node "$CLI/cli.js" <command> …`. Quote every argument built from input in single quotes, writing a `'` inside one as `'\''`.
+
+Before the first CLI call in a session, run `"$CLI/setup.sh"`. It installs the CLI's dependencies and Chromium when they are missing, and says so in one line: pass that line on. If it exits non-zero, stop and report its output. It is not a CLI exit code.
+
+Each command prints a JSON report on stdout: `errors` (each with `message`, `at`, `line`), `warnings`, `written`, and for `fetch`, `words`. Exit 0 is success, 1 a validation or fetch failure, 2 a usage error or refusal, 70 an internal error (pandoc missing, Chromium failing to launch): on 70, stop and report it to the author, and never fall back to another fetch tool. Read the report; never guess.
 
 ## Resume
 
-Before anything else, look for drafts: `find . -path '*/local-data/*/script.draft.yaml' -not -path '*/node_modules/*'`. If one is found, offer it in one line: `Resume "<meta.title>" from Checkpoint <draft.checkpoint>? (<path>)`. On yes, load it, run `explainer validate --draft <path>` and handle the report as at Checkpoint 1, then present that checkpoint again. On no, start fresh, and ask before any write that would replace that file. A draft elsewhere is resumed only when the author points you at it.
+Before anything else, look for drafts: `find . -path '*/local-data/*/script.draft.yaml' -not -path '*/node_modules/*'`. If one is found, offer it in one line: `Resume "<meta.title>" from Checkpoint <draft.checkpoint>? (<path>)`. On yes, load it, run `node "$CLI/cli.js" validate --draft '<path>'` and handle the report as at Checkpoint 1, then present that checkpoint again. On no, start fresh, and ask before any write that would replace that file. A draft elsewhere is resumed only when the author points you at it.
 
 ## 1. Intent
 
@@ -29,13 +33,13 @@ Then ask **once** where files go, before the first write: the project root (defa
 - `<root>/local-data/<slug>/sources/`: extracts;
 - `<root>/local-data/<slug>/script.draft.yaml`: the draft.
 
-Check `local-data` is ignored: `git -C <root> check-ignore -q local-data/<slug>/script.draft.yaml` (a file path, not `local-data/`). Exit 0: ignored. Exit 1: ask before adding the line `local-data/` to `<root>/.gitignore`; if the author declines, stop, since extracts and drafts must not reach git. Exit 128: the root is not in a git repo; say so and go on.
+Check `local-data` is ignored: `git -C '<root>' check-ignore -q 'local-data/<slug>/script.draft.yaml'` (a file path, not `local-data/`). Exit 0: ignored. Exit 1: ask before adding the line `local-data/` to `<root>/.gitignore`; if the author declines, stop, since extracts and drafts must not reach git. Exit 128: the root is not in a git repo; say so and go on.
 
 ## 2. Grounding
 
 Ask for sources: URLs, files, notes. An **extract** is written by `fetch`, never by you; one transcribed from another tool's output is marked as such. Each source gets an id, and ends up as one of:
 
-- **A URL:** `explainer fetch <url> <root>/local-data/<slug>/sources/<id>.txt`. On exit 0, record `{id, title, url, path: local-data/<slug>/sources/<id>.txt, fetched: <today>}`. On exit 2, read the error: an existing extract, ask before re-running with `--overwrite`; a path or symlink refusal is a bug in this skill, so stop and report it. Only exit 1 (an HTTP or network error, or under 100 words) leads to the next line.
+- **A URL:** `node "$CLI/cli.js" fetch '<url>' '<root>/local-data/<slug>/sources/<id>.txt'`. On exit 0, record `{id, title, url, path: local-data/<slug>/sources/<id>.txt, fetched: <today>}`. On exit 2, read the error: an existing extract, ask before re-running with `--overwrite`; a path or symlink refusal is a bug in this skill, so stop and report it. Only exit 1 (an HTTP or network error, or under 100 words) leads to the next line.
 - **Only if `fetch` exited 1:** name the fetch tools you actually have (for example a web-extract tool), and offer them. If the author picks one, write its output to that path yourself and add `via: <tool name>` to the source. Its quotes are *transcribed*: say so wherever they are shown. This is the only extract that passes through you, and it is marked.
 - **If nothing can fetch it:** the author saves the text at the path you name, or the source is dropped and the claims resting on it become **gaps**.
 - **A file in the project:** cite it in place, `{id, title, path: <path relative to root>, version: <git commit>}`. It must sit under the root.
@@ -67,7 +71,7 @@ draft:
   root: .               # the root, as the author gave it
 ```
 
-Run `explainer validate --draft <root>/local-data/<slug>/script.draft.yaml`. Fix every error and re-run until exit 0. A warning that an extract is absent or has no path means its quotes went unchecked: fix it as well, so that no quote reaches the author unchecked.
+Run `node "$CLI/cli.js" validate --draft '<root>/local-data/<slug>/script.draft.yaml'`. Fix every error and re-run until exit 0. A warning that an extract is absent or has no path means its quotes went unchecked: fix it as well, so that no quote reaches the author unchecked.
 
 Then show Checkpoint 1:
 

@@ -1,15 +1,12 @@
 {
   "name": "explainer",
   "version": "0.1.0",
-  "description": "Turn a conversation about a process into a short, source-grounded animated flowchart. Needs the explainer CLI on PATH; see the README.",
+  "description": "Turn a conversation about a process into a short, source-grounded animated flowchart.",
   "author": {
     "name": "Andrew Dempsey",
     "url": "https://github.com/dempseydata"
   },
   "repository": "https://github.com/dempseydata/explainer",
   "license": "MIT",
-  "keywords": ["explainer", "flowchart", "animation", "diagrams"],
-  "skills": [
-    "./build/skill/explainer-script"
-  ]
+  "keywords": ["explainer", "flowchart", "animation", "diagrams"]
 }

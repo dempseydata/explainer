@@ -11,7 +11,7 @@ const { parse } = require('yaml');
 const { chromium } = require('playwright');
 const { main } = require('../cli.js');
 
-const EXAMPLE = path.join(__dirname, '../../../explainers/wayfinder');
+const EXAMPLE = path.join(__dirname, '../../explainers/wayfinder');
 const FPS = 30;
 const script = parse(fs.readFileSync(path.join(EXAMPLE, 'script.yaml'), 'utf8'));
 const ends = script.steps.map((s, i, all) => all.slice(0, i + 1).reduce((sum, x) => sum + x.duration_s, 0));

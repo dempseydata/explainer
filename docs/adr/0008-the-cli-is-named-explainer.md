@@ -11,6 +11,7 @@ The MVP spec ([#12](https://github.com/dempseydata/explainer/issues/12)) calls t
 - **The commands match the skills.** `/explainer-script` and `/explainer-render` drive `explainer`, so the product has one name everywhere it is typed.
 - **Nothing generic lands on PATH.** A binary called `render` would collide with, or be shadowed by, any other tool of that name.
 - **The source folder stays `build/render/`.** It is internal, and the package name is private; neither is typed by the author.
+  *Amended by ADR-0011:* the source folder is `cli/`, at the root of the plugin.
 - **Reading the spec.** Where #12 says "the `render` CLI", read "the `explainer` CLI".
 
 ## Considered options

@@ -16,34 +16,28 @@ Requires Node 20+, [pandoc](https://pandoc.org), [ffmpeg](https://ffmpeg.org) an
 [Claude Code](https://claude.com/claude-code). Built and tested on macOS with pandoc and
 ffmpeg from Homebrew.
 
-**1. The CLI.** Clone the repo, then:
+Install the plugin; the repo is its own marketplace:
 
 ```bash
-cd explainer/build/render
-npm install
-npx playwright install chromium
-npm link        # puts `explainer` on your PATH, pointing at this clone
+claude plugin marketplace add dempseydata/explainer
+claude plugin install explainer@explainer
 ```
 
-**2. The skill.** Pick one route per machine (see
-[ADR-0010](docs/adr/0010-the-skills-install-by-symlink-or-plugin.md)):
+Invoke `/explainer:explainer-script`. On first use the skill installs the CLI's dependencies
+and Playwright's Chromium, saying so in one line; after `claude plugin update
+explainer@explainer` it reinstalls the dependencies only.
 
-- **Plugin** — to use Explainer:
+**To work on Explainer**, clone the repo and use these routes instead of the plugin, never
+both on one machine (see [ADR-0010](docs/adr/0010-the-skills-install-by-symlink-or-plugin.md)
+and [ADR-0011](docs/adr/0011-the-repo-is-a-claude-code-plugin.md)). From the repo root:
 
-  ```bash
-  claude plugin marketplace add dempseydata/explainer
-  claude plugin install explainer@explainer
-  ```
+```bash
+ln -s "$PWD/skills/explainer-script" ~/.claude/skills/explainer-script
+cd cli && ./setup.sh && npm link    # optional: `explainer` on your PATH, to run the CLI by hand
+```
 
-  Invoke `/explainer:explainer-script`. Update with `claude plugin update explainer@explainer`.
-
-- **Symlink** — to work on the skill. From the repo root:
-
-  ```bash
-  ln -s "$PWD/build/skill/explainer-script" ~/.claude/skills/explainer-script
-  ```
-
-  Invoke `/explainer-script`. Edits take effect in the next session.
+Invoke `/explainer-script`; edits take effect in the next session. The linked skill runs the
+CLI in the clone, not the one on PATH. The tests run with `npm test` in `cli/`.
 
 Run the skill in the project whose process you want to explain.
 

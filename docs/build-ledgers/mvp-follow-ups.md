@@ -11,11 +11,16 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 
 | Ticket | Status | Commit | Rounds | Suite | Notes |
 | --- | --- | --- | --- | --- | --- |
+| #36 | built, open (human run) | de487a8 | 1 | 109 / 189 s | round-1 must-fix was the untracked process copy (fixed by the orchestrator, as authorised); links re-pointed, `npm link` re-run from cli/ |
 
 ## Owed
 
 ## Decisions
+- #36: `plugin.json` drops `skills`; default discovery finds `skills/*` — ADR? no (ADR-0011 covers it)
+- #36: setup.sh treats Chromium as missing when a headless launch fails (the headless shell is a separate install; ~0.5 s per run) — ADR? no
 
 ## Blocked
 
 ## Nits
+- #36: setup.sh would print "installed Chromium" if Chromium is present but fails to launch for another reason (reasoned, not reproduced)
+- #36: `claude plugin validate` warns that the root CLAUDE.md is not loaded as plugin context (pre-existing)
