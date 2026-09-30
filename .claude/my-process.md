@@ -2,10 +2,10 @@
 stages:
   - name: Ideate
     commands: [brainstorm, discover, write-prd, red-team-prd, pre-mortem, write-stories, test-scenarios, grill-me]
-    paths: [background/ideation/, background/definition/]
+    paths: [docs/ideation/, docs/definition/]
   - name: Design
     commands: [design-sync, impeccable]
-    paths: [background/design/, design/]
+    paths: [docs/design/]
   - name: Plan
     commands: [wayfinder, grill-with-docs, to-spec, to-tickets, setup-matt-pocock-skills]
     skills: [grilling, domain-modeling, research, prototype]
@@ -44,7 +44,7 @@ Idea → product definition. Exits to **Design**. Two doors in: a **rough** idea
 
 **Answer the publication question here, in one line:** *if this ever goes public, what's public — the app, or the record?* It decides the repo model (see **Release → Publication**) and it is far cheaper to answer at ideation than at ship.
 
-**Answer the shipping question beside it, in one line:** *what shape does it ship in — an app, a CLI, a Claude Code skill or plugin, a library?* It decides the repo's folder layout from the first commit. Answered late, the layout has to be rearranged under a half-built product (Explainer: [ADR-0011](https://github.com/dempseydata/explainer/blob/main/docs/adr/0011-the-repo-is-a-claude-code-plugin.md)).
+**Answer the shipping question beside it, in one line:** *what shape does it ship in — an app, a CLI, a Claude Code skill or plugin, a library?* It decides the repo's folder layout from the first commit. Answered late, the layout has to be rearranged under a half-built product (Explainer: [ADR-0011](https://github.com/dempseydata/explainer/blob/main/docs/adr/0011-the-repo-is-a-claude-code-plugin.md)). Together the two answers pick the starting template: `project-template/` (private working repo), `project-template-public/` (born public), or `project-template-plugin/` (a Claude Code skill or plugin, born public, the repo root the plugin root).
 
 **A PRD is written only when someone other than you will review it.** Solo, it is wasted motion: `grilling` re-interrogates it from scratch and `to-spec` owns the spec slot. An **unreviewed** PRD is never the input to `grill-with-docs` — that rule stands. A **reviewed** PRD is the definition: it carries the team's decisions, the allocation, and what was struck out, and it is the input to whichever Plan front door the work's size selects. It maps onto a `wayfinder` map almost section for section:
 
@@ -169,6 +169,7 @@ Starts where code starts: at `implement` for one ticket, or at `mp-night-shift` 
 | --- | --- |
 | Build, a ticket set unattended (the usual case after `to-tickets`) | `/mp-night-shift <spec>` (dempsey-skills). A prescan, then one decision sitting where you settle every cross-ticket contract no ADR fixes and authorise pushes, tracker writes and the end state. Then per ticket: a fresh implementer and reviewer running the rows below, a commit, and the ticket closed. It ends with a handover. A blocker pushes to your phone and the shift works on; reply in the session to unblock. Works the `ready-for-agent` tickets only |
 | Build, one ticket or at the keyboard | `implement`, with `tdd` as the red-green engine |
+| A skill or plugin product | Each skill is written to `writing-great-skills` (mattpocock), deciding model- or user-invoked first. Changes are tried through the symlink route; `claude plugin validate` gates every commit (the hook). Deterministic code goes in `cli/`, run from the plugin, never from PATH |
 | Model output is load-bearing | see **Evaluation** below — `tdd` cannot test a prompt |
 | Acceptance, story level (review path) | Scenarios whose criteria are UI-observable become **Playwright tests** in the repo, named by story and criterion so the coverage matrix is traceable in code, run before the ticket closes. The `playwright-cli` skill writes and runs them — the repeatable gate. The `playwright` MCP plugin walks one scenario interactively with screenshots — the artefact for a human reviewer. Not interchangeable. `tdd` at the seams stays underneath as the agent's own gate |
 | Before commit | `code-review`, then `/ponytail-review` |
@@ -184,19 +185,20 @@ Starts where code starts: at `implement` for one ticket, or at `mp-night-shift` 
 - `/document-app` for the reviewability docs (`architecture`, `flows`, `permissions`, `variables`, `cron`, `automation`) into `docs/`.
 - `/graphify .` after a build cycle; consult the graph before grepping.
 - `release-notes` (pm-execution) back to the team on the review path, with the acceptance test run as the evidence.
+- **Plugin release:** bump `version` in `plugin.json`, then `claude plugin tag` (it checks the manifest and its marketplace entry agree, and tags `<name>--v<version>`), then push. Users take it with `claude plugin update`.
 
 ### Publication
 
 Two repo models, chosen at ideation by the publication question, never switched by flipping visibility — git history is append-only, so a flip publishes everything ever committed, deleted files and throwaway branches included.
 
-- **Born public.** The working repo *is* the public repo from the first commit; the record (ideation, definition, design, tickets, the why) is published by design and written knowing that. A pre-commit hook refuses anything matching a denylist (home paths, key shapes, transcript filenames); extend the list, never bypass it.
+- **Born public.** The working repo *is* the public repo from the first commit; the record (ideation, definition, design, tickets, the why) is published by design and written knowing that. A pre-commit hook refuses anything matching a denylist (home paths, key shapes, transcript filenames), and private-project names from a list kept outside every repo; extend the lists, never bypass the hook.
 - **Private working repo, curated export.** The working repo stays permanently private, record and history included. Publishing means exporting an app-only repo with its own README and fresh history — never filtered history, whose historical blobs still carry deleted personal content.
 
 Under either model **real personal data never enters git**: fixtures derived from real sessions live in gitignored paths, screenshots are taken from a filtered or synthetic view, and issue bodies reference sessions by id rather than quoting transcript text from another project.
 
 ## Evaluation — a recurring discipline, not a stage
 
-**Applies only when a model's output quality is load-bearing** — a curator, a classifier, an assessor, anything where "is this good?" is a judgement rather than a pass/fail. Deterministic code belongs to `tdd`; a prompt has no compiler, no type system, and no diff that `code-review` can read. If nothing in the product hangs on model output, skip this section entirely.
+**Applies only when a model's output quality is load-bearing** — a curator, a classifier, an assessor, anything where "is this good?" is a judgement rather than a pass/fail. Deterministic code belongs to `tdd`; a prompt has no compiler, no type system, and no diff that `code-review` can read. If nothing in the product hangs on model output, skip this section entirely. **A skill or plugin product always qualifies**: its prompts are the product. Its eval set lives in `evals/` and `claude plugin eval` runs it, covering the regression and before-deploy moments below.
 
 It has no fixed position. It recurs, and the moments do different jobs:
 
@@ -223,7 +225,7 @@ The rows marked *review path* describe a **blended team** — you plus other peo
 
 # Project specifics
 
-**Publication model: born public** — this repo *is* the public repo from the first commit; the record is published by design (see the Visibility section of `CLAUDE.md` and `.githooks/`). Phase folders: `background/ideation/` → `background/definition/` → `background/design/` → `build/`; `design/` at the root holds only `tokens.css`.
+**Publication model: born public** — this repo *is* the public repo from the first commit; the record is published by design (see the Visibility section of `CLAUDE.md` and `.githooks/`). Phase folders: `docs/ideation/` → `docs/definition/` → `docs/design/` → `build/`; the record (with `docs/why.md` and `docs/build-ledgers/`) lives under `docs/` so the root reads as the product.
 
 **Does not apply:**
 - **Design** — the product is a set of skills with no UI of its own. Style packs style the rendered output, not the product, and are decided on the wayfinder map, not through the Design flow.

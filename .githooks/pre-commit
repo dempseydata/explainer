@@ -1,8 +1,18 @@
 #!/bin/sh
-# Refuse to commit any staged addition matching .githooks/denylist.txt, or the private list
-# of private-project names kept outside every repo so the names are never published.
+# Refuse a commit when a plugin repo's manifests fail `claude plugin validate`, or when any
+# staged addition matches .githooks/denylist.txt or the private list of private-project names
+# kept outside every repo so the names are never published.
 # Enable once per clone: git config core.hooksPath .githooks
-list="$(git rev-parse --show-toplevel)/.githooks/denylist.txt"
+root="$(git rev-parse --show-toplevel)"
+if [ -d "$root/.claude-plugin" ]; then
+  if command -v claude >/dev/null 2>&1; then
+    claude plugin validate "$root" >/dev/null 2>&1 \
+      || { echo "pre-commit: claude plugin validate failed; run it to see why" >&2; exit 1; }
+  else
+    echo "pre-commit: claude not on PATH; plugin manifests unvalidated" >&2
+  fi
+fi
+list="$root/.githooks/denylist.txt"
 private="${XDG_CONFIG_HOME:-$HOME/.config}/git/denylist-private.txt"
 [ -f "$list" ] || { echo "pre-commit: $list missing" >&2; exit 1; }
 grep -Eqv '^[[:space:]]*(#|$)' "$private" 2>/dev/null \
