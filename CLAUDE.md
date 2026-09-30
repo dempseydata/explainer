@@ -1,13 +1,13 @@
 # Explainer
 
-Turns a conversation about a process into a short, source-grounded animated flowchart — a versioned script rendered through swappable style packs — for people who explain tools and processes. The brief is `background/ideation/brief.md`.
+Turns a conversation about a process into a short, source-grounded animated flowchart — a versioned script rendered through swappable style packs — for people who explain tools and processes. The brief is `docs/ideation/brief.md`.
 
 ## Visibility
 **Born public.** This repo is the public repo — there is no private working copy and no
 export step. Everything committed here is publishable from the first commit:
 
-- The working record — `background/` (ideation, definition, design comps, the why) and
-  `docs/adr/` — is public by design. Write it knowing that.
+- The working record — everything under `docs/`: ideation, definition, design comps, the why,
+  the build ledgers and `docs/adr/` — is public by design. Write it knowing that.
 - Real session-derived data, fixtures drawn from it, unfiltered screenshots, secrets and
   machine paths never enter git. `local-data/` is ignored for the first; screenshots are
   taken from a filtered or synthetic view; issue bodies reference sessions by id, never
@@ -25,9 +25,9 @@ has run. If a product cannot meet this, it is a private-forever project and star
 `project-template/`, not from here.
 
 ## Phase layout
-`background/ideation/` → `background/definition/` → `background/design/` → `build/`.
+`docs/ideation/` → `docs/definition/` → `docs/design/` → `build/`.
 Context from earlier phases informs later ones — don't engage on design without reading the
-definition, don't engage on build without reading the design decisions. `background/why.md`
+definition, don't engage on build without reading the design decisions. `docs/why.md`
 is the story the README used to tell: why it was built, how, and what was reversed.
 
 ## Process

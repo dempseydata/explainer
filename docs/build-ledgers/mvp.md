@@ -1,6 +1,6 @@
-# Night shift: Explainer MVP (#12), branch build/mvp, run 2026-09-27
+# Build ledger: Explainer MVP (#12), branch build/mvp, run 2026-09-27
 
-Run by hand from an orchestrator prompt, before mp-night-shift existed; its lessons became that skill. All tickets below are merged to main and closed on GitHub, except #25 (awaiting its human run).
+The unattended build of the MVP's tickets: one implementer and one reviewer per ticket, one commit each. All tickets below are merged to main and closed on GitHub, except #25 (awaiting its human run).
 
 
 RULES (author, 2026-09-27): fix-round limit 3; a single small contained defect remaining after the limit is fixed without stopping the run. Unspecified hard-to-reverse decisions still STOP and ask.

@@ -13,10 +13,10 @@ Explainer ships as a Claude Code plugin, but the repo grew as a project: the CLI
 skills/<name>/                                 one folder per skill
 cli/                                           the CLI (was build/render/)
 explainers/                                    the example scripts
-background/ docs/ CONTEXT.md .scratch/          the record, unchanged
+docs/ CONTEXT.md                               the record: docs/adr, ideation, definition, design, why, build ledgers
 ```
 
-`build/` goes. The installed copy carries the record too, about 100 KB, which costs nothing worth a deeper layout.
+`build/` goes, and the record, once in `background/` and `.scratch/`, is gathered under `docs/`, so the root reads as the plugin. The installed copy carries the record too, about 100 KB, which costs nothing worth a deeper layout.
 
 **The skills run the CLI from inside the plugin**, at `<skill-dir>/../../cli/cli.js`, never from PATH. On first use, and again after a plugin update replaces the copy, a skill finds the CLI's dependencies or Chromium missing, installs them into the plugin copy, and says so in one line.
 

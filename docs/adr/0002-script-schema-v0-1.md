@@ -4,7 +4,7 @@ status: accepted
 
 # Script schema v0.1, frozen against the whole Wayfinder story
 
-The brief's draft schema was tested by hand-writing the complete Wayfinder script against it: 12 steps, 74 s, 30 quotes, every quote substring-checked against its stored extract. The story fitted, but only by improvising in 15 places, four of them outright breaks. The schema is frozen at v0.1 with the changes below. It supersedes the schema section of `background/ideation/brief.md`. The script is [`build/examples/wayfinder/script.yaml`](https://github.com/dempseydata/explainer/blob/prototype/schema-wayfinder/build/examples/wayfinder/script.yaml) on the throwaway branch `prototype/schema-wayfinder`; the first commit there is the draft with its bend markers.
+The brief's draft schema was tested by hand-writing the complete Wayfinder script against it: 12 steps, 74 s, 30 quotes, every quote substring-checked against its stored extract. The story fitted, but only by improvising in 15 places, four of them outright breaks. The schema is frozen at v0.1 with the changes below. It supersedes the schema section of `docs/ideation/brief.md`. The script is [`build/examples/wayfinder/script.yaml`](https://github.com/dempseydata/explainer/blob/prototype/schema-wayfinder/build/examples/wayfinder/script.yaml) on the throwaway branch `prototype/schema-wayfinder`; the first commit there is the draft with its bend markers.
 
 ## The schema
 

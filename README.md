@@ -5,8 +5,8 @@ skill works with you to decide what to show and writes a versioned, source-cited
 renderer plays that script through a style pack (pencil sketch or standard flowchart icons)
 into a step-through HTML page, an MP4 and captions. The same script re-renders in another
 style, or after an edit, without regenerating anything. Pre-build: the brief is
-[background/ideation/brief.md](background/ideation/brief.md), and the story of how it was
-built lives in [background/why.md](background/why.md).
+[docs/ideation/brief.md](docs/ideation/brief.md), and the story of how it was
+built lives in [docs/why.md](docs/why.md).
 
 <!-- Screenshots of the real thing, taken from a filtered or synthetic view. -->
 
