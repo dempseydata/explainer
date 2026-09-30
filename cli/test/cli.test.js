@@ -105,6 +105,23 @@ test('validate --pack with no such pack is a usage error', async () => {
   assert.equal(code, 2);
 });
 
+// #32: --pack names an installed pack; a path to a pack.json anywhere else is not loaded.
+test('--pack that is not exactly an installed pack name is a usage error naming the installed packs', async t => {
+  const packs = path.join(__dirname, '../packs');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-pack-'));
+  t.after(() => fs.rmSync(outside, { recursive: true }));
+  fs.copyFileSync(path.join(packs, 'standard/pack.json'), path.join(outside, 'pack.json'));
+  const script = writeScript(TWO_NODE);
+  for (const name of [path.relative(packs, outside), outside, 'standard/', 'standard/../standard', '.', '']) {
+    for (const command of ['validate', 'render']) {
+      const { code, report } = await main([command, script, '--pack', name]);
+      assert.equal(code, 2, `${command} --pack ${name}`);
+      assert.match(report.errors[0].message, /one of: pencil, standard$/);
+      assert.deepEqual(report.written, []);
+    }
+  }
+});
+
 // Overrun (#17, ADR-0004, ADR-0006): the suggestion is max(animation time, narration characters / 15), up to the next 0.5 s.
 // In the standard pack a reveal takes 0.4 s (#6).
 const withStep2 = (narration, d) => TWO_NODE.replace('narration: Then review it.\n    duration_s: 3', `narration: ${narration}\n    duration_s: ${d}`);

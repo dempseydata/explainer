@@ -10,6 +10,8 @@
 // Exit codes: 0 success, 1 validation or fetch failure, 2 usage error, 3 findings stopped capture, 70 internal error.
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const dns = require('node:dns');
+const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -662,13 +664,34 @@ function narrationMd(script, steps) {
     script.sources.map(s => `- **${s.id}**: ${s.title}. ${where(s)}\n`).join('')}`;
 }
 
+// A redirect, over HTTP or in Chromium, may not lead fetch to a loopback, link-local, private or unspecified address
+// (#32). The URL given may: the author typed it.
+const INTERNAL = new net.BlockList();
+for (const [at, bits] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16]]) INTERNAL.addSubnet(at, bits);
+for (const [at, bits] of [['::', 128], ['::1', 128], ['fe80::', 10], ['fc00::', 7]]) INTERNAL.addSubnet(at, bits, 'ipv6'); // also covers ::ffff:<IPv4>
+// The refusal's reason for a redirect to target, or undefined if every address its host resolves to is public.
+// ponytail: checks the name, not the connection; DNS rebinding between this lookup and the connect gets through.
+async function refuseRedirect(url, target) {
+  const host = new URL(target).hostname.replace(/^\[|\]$/g, '');
+  const addresses = net.isIP(host) ? [host] : await dns.promises.lookup(host, { all: true }).then(all => all.map(a => a.address), () => []);
+  const internal = addresses.find(a => INTERNAL.check(a, net.isIP(a) === 6 ? 'ipv6' : 'ipv4'));
+  return internal && `fetch ${url}: refused a redirect to ${target} (${internal}), a loopback, link-local, private or unspecified address; nothing written`;
+}
+
 // Writes a source's text straight to disk with no model in the path (ADR-0005, ADR-0009):
 // HTTP plus pandoc's plain text first, then headless Chromium's innerText; under 100 words either way, it fails.
 async function fetchExtract(url, file, report, overwrite) {
   const failed = message => ({ code: 1, report: { ...report, errors: [{ message }] } });
   let html;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    const signal = AbortSignal.timeout(30000); // over every hop
+    let res, at = url;
+    for (let hops = 0; [301, 302, 303, 307, 308].includes((res = await fetch(at, { redirect: 'manual', signal })).status) && res.headers.has('location'); hops++) {
+      if (hops === 20) return failed(`fetch ${url}: too many redirects, over 20; nothing written`);
+      at = new URL(res.headers.get('location'), at).href;
+      const refused = await refuseRedirect(url, at);
+      if (refused) return failed(refused);
+    }
     if (!res.ok) return failed(`fetch ${url}: HTTP ${res.status}`);
     html = await res.text();
   } catch (e) {
@@ -681,14 +704,34 @@ async function fetchExtract(url, file, report, overwrite) {
   if (wordsIn(text) < 100) {
     const { chromium } = require('playwright');
     const browser = await chromium.launch();
+    let refused;
     try {
       const page = await browser.newPage();
+      // Playwright's routes never see a redirect's hops; Chromium's Fetch domain pauses each one.
+      // Every main-frame navigation after the first (a redirect, meta refresh or script) to an internal address fails the fetch;
+      // a sub-resource or frame redirected inward is only blocked.
+      const cdp = await page.context().newCDPSession(page);
+      const mainFrame = (await cdp.send('Page.getFrameTree')).frameTree.frame.id;
+      let navigations = 0;
+      cdp.on('Fetch.requestPaused', async ({ requestId, request, redirectedRequestId, resourceType, frameId }) => {
+        let reason;
+        try {
+          const navigation = resourceType === 'Document' && frameId === mainFrame;
+          reason = (navigation ? navigations++ : redirectedRequestId) && await refuseRedirect(url, request.url);
+          if (navigation && reason) refused ??= reason;
+        } catch (e) {
+          refused ??= reason = `fetch ${url}: Chromium: ${e.message}`;
+        }
+        cdp.send(reason ? 'Fetch.failRequest' : 'Fetch.continueRequest', { requestId, ...reason && { errorReason: 'AccessDenied' } }).catch(() => {});
+      });
+      await cdp.send('Fetch.enable');
       await page.goto(url, { waitUntil: 'commit' });
       // A page that polls never goes network-idle: after 5 s, read what has rendered and let the floor decide.
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       text = `${await page.evaluate(() => document.body.innerText)}\n`;
+      if (refused) return failed(refused);
     } catch (e) {
-      return failed(`fetch ${url}: Chromium: ${e.message.split('\n')[0]}`);
+      return failed(refused ?? `fetch ${url}: Chromium: ${e.message.split('\n')[0]}`);
     } finally {
       await browser.close();
     }
@@ -744,11 +787,12 @@ async function run(argv, report, workers) {
     return usage(`a script must be at <root>/explainers/<slug>/script.yaml, or a draft at <root>/local-data/<slug>/script.draft.yaml: ${file}`);
   }
 
-  const packJson = packFile({ name: String(argv[packAt + 1]) }, 'pack.json');
-  if ((command === 'render' || packAt >= 0) && (packAt < 0 || !fs.existsSync(packJson))) {
-    return usage(`${command} ${command === 'render' ? 'needs' : 'takes'} --pack <name>, one of: ${fs.readdirSync(path.join(__dirname, 'packs')).join(', ')}`);
+  // --pack is an installed pack's name, never a path: nothing outside packs/ is loaded or inlined (#32).
+  const installed = fs.readdirSync(path.join(__dirname, 'packs')).filter(name => fs.existsSync(packFile({ name }, 'pack.json')));
+  if ((command === 'render' || packAt >= 0) && (packAt < 0 || !installed.includes(argv[packAt + 1]))) {
+    return usage(`${command} ${command === 'render' ? 'needs' : 'takes'} --pack <name>, one of: ${installed.join(', ')}`);
   }
-  const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packJson, 'utf8')) : undefined;
+  const pack = packAt >= 0 ? JSON.parse(fs.readFileSync(packFile({ name: argv[packAt + 1] }, 'pack.json'), 'utf8')) : undefined;
 
   // --frame takes a draft: Checkpoint 2 renders the graph before any step exists (ADR-0005).
   const { errors, warnings, script } = validate(file, { draft: (command === 'validate' && draft) || frame !== undefined, pack });

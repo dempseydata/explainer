@@ -5,6 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
 const { main } = require('../cli.js');
 
 const words = n => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
@@ -17,21 +18,33 @@ const PAGES = {
   '/poll': '',
   '/thin': `<!doctype html><html><body><p>${words(40)}</p><script>document.body.append(" ${words(10)}")</script></body></html>`,
 };
-let server, base;
+let server, base, inner, innerHits = 0;
 
 before(async () => {
-  let dropped = 0;
+  // A second loopback server, the target of the redirects below: it must never be reached through one.
+  inner = http.createServer((req, res) => { innerHits++; res.end(PAGES['/plain']); });
+  await new Promise(resolve => inner.listen(0, '127.0.0.1', resolve));
+  let dropped = 0, late = 0;
   server = http.createServer((req, res) => {
     // A thin page over HTTP; Chromium's own request, the second, gets no response at all.
     if (req.url === '/dropped' && dropped++) return req.socket.destroy();
-    const page = PAGES[req.url === '/dropped' ? '/thin' : req.url];
+    // /redirect?to=<url> redirects there; /late-redirect serves the thin page over HTTP, then redirects Chromium.
+    const to = new URL(req.url, 'http://x').searchParams.get('to') ?? (req.url === '/late-redirect' && late++ ? `http://127.0.0.1:${inner.address().port}/plain` : null);
+    if (to) return res.writeHead(302, { location: to }).end();
+    if (req.url === '/late-redirect') req.url = '/thin';
+    // Pages that leave for the inner server once Chromium runs them: by meta refresh, by script, or for an image only.
+    const internal = `http://127.0.0.1:${inner.address().port}/plain`;
+    const leaving = { '/meta-refresh': `<meta http-equiv="refresh" content="0;url=${internal}">${PAGES['/thin']}`,
+      '/js-location': `<script>location.href = "${internal}"</script>${PAGES['/thin']}`,
+      '/pixel': `${PAGES['/scripted']}<img src="/redirect?to=${encodeURIComponent(internal)}">` };
+    const page = leaving[req.url] ?? PAGES[req.url === '/dropped' ? '/thin' : req.url];
     res.writeHead(page ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page ?? 'not found');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(() => { server.close(); inner.close(); });
 
 // An extract path under a fresh root: <root>/local-data/<slug>/sources/<name>.
 function extractPath(name = 'page.txt') {
@@ -137,4 +150,71 @@ test('an extract whose sources/ directory is a symlink out of local-data is refu
   assert.match(report.errors[0].message, /symlink|outside/);
   assert.deepEqual(report.written, []);
   assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+// #32: a redirect may not carry fetch to a loopback, link-local, private or unspecified address; the URL given may.
+test('a redirect to a loopback, link-local, private or unspecified address is refused with the reason, and nothing is written', async () => {
+  const port = inner.address().port;
+  const targets = [`http://127.0.0.1:${port}/plain`, `http://localhost:${port}/plain`, `http://[::1]:${port}/plain`, `http://[::ffff:127.0.0.1]:${port}/plain`,
+    'http://10.1.2.3/', 'http://172.16.0.1/', 'http://192.168.1.1/', 'http://169.254.169.254/latest/meta-data/', 'http://0.0.0.0/', 'http://[::]/',
+    'http://[fe80::1]/', 'http://[fd00::1]/'];
+  for (const to of targets) {
+    const file = extractPath();
+    const { code, report } = await main(['fetch', `${base}/redirect?to=${encodeURIComponent(to)}`, file]);
+    assert.equal(code, 1, to);
+    assert.match(report.errors[0].message, /refused a redirect to .*loopback, link-local, private or unspecified/, to);
+    assert.deepEqual(report.written, []);
+    assert.equal(fs.existsSync(path.dirname(file)), false);
+  }
+  assert.equal(innerHits, 0);
+});
+
+test('a redirect to a loopback address in Chromium\'s navigation is refused with the reason, and nothing is written', async () => {
+  const file = extractPath();
+  const { code, report } = await main(['fetch', `${base}/late-redirect`, file]);
+  assert.equal(code, 1);
+  assert.match(report.errors[0].message, /refused a redirect to http:\/\/127\.0\.0\.1:\d+\/plain/);
+  assert.deepEqual(report.written, []);
+  assert.equal(fs.existsSync(path.dirname(file)), false);
+  assert.equal(innerHits, 0);
+});
+
+test('a meta refresh or a script that navigates the page to a loopback address is refused with the reason, and nothing is written', async () => {
+  for (const page of ['/meta-refresh', '/js-location']) {
+    const file = extractPath();
+    const { code, report } = await main(['fetch', `${base}${page}`, file]);
+    assert.equal(code, 1, page);
+    assert.match(report.errors[0].message, /refused a redirect to http:\/\/127\.0\.0\.1:\d+\/plain/, page);
+    assert.deepEqual(report.written, []);
+    assert.equal(fs.existsSync(path.dirname(file)), false);
+  }
+  assert.equal(innerHits, 0);
+});
+
+test('a sub-resource redirected to a loopback address is blocked, and the page is still extracted', async () => {
+  const file = extractPath();
+  const { code, report } = await main(['fetch', `${base}/pixel`, file]);
+  assert.deepEqual(report.errors, []);
+  assert.equal(code, 0);
+  assert.equal(report.words, 120);
+  assert.equal(innerHits, 0);
+});
+
+test('a redirect loop is cut off after 20 hops with the reason, and nothing is written', async () => {
+  // A loop through a loopback proxy, so no hop names an internal address; .invalid never resolves (RFC 2606).
+  let hops = 0;
+  const loop = http.createServer((req, res) => { hops++; res.writeHead(302, { location: 'http://loop.invalid/', connection: 'close' }).end(); });
+  loop.on('connect', (req, socket) => { socket.write('HTTP/1.1 200 Connection Established\r\n\r\n'); loop.emit('connection', socket); });
+  await new Promise(resolve => loop.listen(0, '127.0.0.1', resolve));
+  const file = extractPath();
+  const env = { ...process.env, HTTP_PROXY: `http://127.0.0.1:${loop.address().port}`, NODE_USE_ENV_PROXY: '1' };
+  env.http_proxy = env.HTTP_PROXY; env.NO_PROXY = env.no_proxy = ''; // the machine's own proxy settings must not win
+  const { code, stdout } = await new Promise(resolve => execFile(process.execPath, [path.join(__dirname, '../cli.js'), 'fetch', 'http://loop.invalid/', file], { env },
+    (e, stdout) => resolve({ code: e?.code ?? 0, stdout })));
+  loop.close();
+  const report = JSON.parse(stdout);
+  assert.equal(code, 1);
+  assert.match(report.errors[0].message, /too many redirects/);
+  assert.deepEqual(report.written, []);
+  assert.equal(hops, 21);
 });
