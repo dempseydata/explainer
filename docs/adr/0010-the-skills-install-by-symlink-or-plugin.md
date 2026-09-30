@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted, superseded in part by ADR-0011
 ---
 
 # The skills install by symlink or plugin; the CLI by `npm link`
