@@ -44,6 +44,8 @@ Idea → product definition. Exits to **Design**. Two doors in: a **rough** idea
 
 **Answer the publication question here, in one line:** *if this ever goes public, what's public — the app, or the record?* It decides the repo model (see **Release → Publication**) and it is far cheaper to answer at ideation than at ship.
 
+**Answer the shipping question beside it, in one line:** *what shape does it ship in — an app, a CLI, a Claude Code skill or plugin, a library?* It decides the repo's folder layout from the first commit. Answered late, the layout has to be rearranged under a half-built product (Explainer: [ADR-0011](https://github.com/dempseydata/explainer/blob/main/docs/adr/0011-the-repo-is-a-claude-code-plugin.md)).
+
 **A PRD is written only when someone other than you will review it.** Solo, it is wasted motion: `grilling` re-interrogates it from scratch and `to-spec` owns the spec slot. An **unreviewed** PRD is never the input to `grill-with-docs` — that rule stands. A **reviewed** PRD is the definition: it carries the team's decisions, the allocation, and what was struck out, and it is the input to whichever Plan front door the work's size selects. It maps onto a `wayfinder` map almost section for section:
 
 | PRD section, post-review | Wayfinder map section |
