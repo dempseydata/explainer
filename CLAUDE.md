@@ -12,8 +12,8 @@ export step. Everything committed here is publishable from the first commit:
   machine paths never enter git. `local-data/` is ignored for the first; screenshots are
   taken from a filtered or synthetic view; issue bodies reference sessions by id, never
   quoted transcript text from another project.
-- Toolchain is plugins at user scope plus `~/.claude/skills/`; nothing under
-  `.claude/skills/` is tracked here.
+- Toolchain is plugins at user scope plus `~/.claude/skills/`. Nothing under `.claude/` is
+  tracked here: the process copy and project settings are tooling, kept local.
 - `.githooks/pre-commit` refuses a commit that matches `.githooks/denylist.txt` (home
   paths, key shapes, transcript filenames) or a private-project name listed in
   `~/.config/git/denylist-private.txt`, a file kept outside every repo so the names are

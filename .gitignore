@@ -19,10 +19,8 @@ graphify-out/
 *.png
 !docs/screenshots/*.png
 
-# Per-machine Claude Code state and toolchain inventory
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
-.claude/worktrees/
+# Claude Code state, the house-process copy, project settings and the toolchain inventory: tooling, not product
+.claude/
 what-is-installed.md
 
 # Rendered explainers — disposable build output, never committed
