@@ -1,11 +1,15 @@
 #!/bin/sh
-# Refuse to commit any staged addition matching .githooks/denylist.txt.
+# Refuse to commit any staged addition matching .githooks/denylist.txt, or the private list
+# of private-project names kept outside every repo so the names are never published.
 # Enable once per clone: git config core.hooksPath .githooks
 list="$(git rev-parse --show-toplevel)/.githooks/denylist.txt"
+private="${XDG_CONFIG_HOME:-$HOME/.config}/git/denylist-private.txt"
 [ -f "$list" ] || { echo "pre-commit: $list missing" >&2; exit 1; }
-patterns=$(grep -Ev '^[[:space:]]*(#|$)' "$list") || exit 0
+grep -Eqv '^[[:space:]]*(#|$)' "$private" 2>/dev/null \
+  || { echo "pre-commit: no names in $private; private-project names are unguarded" >&2; private=; }
+patterns=$(cat "$list" $private | grep -Ev '^[[:space:]]*(#|$)') || exit 0
 hits=$(git diff --cached -U0 --diff-filter=ACMR -- . ':!.githooks/denylist.txt' \
   | grep -E '^\+[^+]' | grep -Ei "$(printf '%s\n' "$patterns" | paste -sd'|' -)" | head -20) || true
 [ -z "$hits" ] && exit 0
-printf 'pre-commit: staged content matches .githooks/denylist.txt\n%s\n' "$hits" >&2
+printf 'pre-commit: staged content matches the denylist\n%s\n' "$hits" >&2
 exit 1

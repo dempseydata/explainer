@@ -15,7 +15,9 @@ export step. Everything committed here is publishable from the first commit:
 - Toolchain is plugins at user scope plus `~/.claude/skills/`; nothing under
   `.claude/skills/` is tracked here.
 - `.githooks/pre-commit` refuses a commit that matches `.githooks/denylist.txt` (home
-  paths, key shapes, private-project names). Add to the list; do not bypass it.
+  paths, key shapes, transcript filenames) or a private-project name listed in
+  `~/.config/git/denylist-private.txt`, a file kept outside every repo so the names are
+  never published; the hook warns while it has none. Add to the lists; do not bypass it.
 
 Issues live on this repo and are public. Publication is therefore not a phase — the repo
 flips visibility on GitHub when the README says what the product is and `security-preflight`
