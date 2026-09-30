@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "explainer",
+  "description": "The Explainer skills.",
+  "owner": {
+    "name": "Andrew Dempsey",
+    "url": "https://github.com/dempseydata"
+  },
+  "plugins": [
+    {
+      "name": "explainer",
+      "source": "./",
+      "description": "Turn a conversation about a process into a short, source-grounded animated flowchart.",
+      "category": "productivity"
+    }
+  ]
+}
