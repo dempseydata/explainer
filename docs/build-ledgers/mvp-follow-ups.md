@@ -15,12 +15,14 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 | #28 | done | fde3f1b | 0 | 109 / 190 s | clean review; 3 wording nits fixed by the orchestrator |
 | #32 | done | 086c07c | 2 | 115 / 188 s | round 1: meta-refresh/JS navigation inward, unbounded loop, CDP throw lost the report, sub-resource failed the fetch; round 2 (orchestrator): proxy env in the loop test, 100.64/10 blocked |
 | #33 | done | c32484b | 3 | 119 / 191 s | r1: a group mark over its own member went unreported; r2: marks vs edges (pencil step-6 @ on edge b1), pencil card corner mark inset d/2; r3: inset for cards only |
-| #34 | done | this commit | 1 | 120 / 78 s | capture:false moves took 191→149 s; round 1 (orchestrator, measured by reviewer): --test-concurrency=4 |
+| #34 | done | 26e863b | 1 | 120 / 78 s | capture:false moves took 191→149 s; round 1 (orchestrator, measured by reviewer): --test-concurrency=4 |
+| #24 | built, open (human run) | this commit | 1 | 120 / 78 s | r1: exit before review.md (3, fast 0), unbounded waiter, temp dir leak, expired transient read as a change; 3 nits by the orchestrator (viewer never a fork, stamp needs string pack+sha256, path printed before cp); `~/.claude/skills/explainer-render` linked |
 
 ## Owed
 - #31: CONTEXT.md Finding omits `crossing` (and the caption check)
 
 ## Decisions
+- #24: two background jobs (render + a review.md waiter bounded at 600 s); a findings stop writes "Not run: findings stopped capture." under ## Look; emphasis is checked against what the narration names (the misplaced-highlight case needs it); the pack defaults to the stamp's; look.md takes any folder of step-NN.png (#26 must pass every step to --frame) — ADR? no
 - #34: renders shared per test file by script text; the layout read-back test keeps full capture (it compares MP4 bytes); test files run 4 at a time (no shared paths or ports) — ADR? no
 - #33: slot marks (fog) are not measured; only ring marks are exempt from their own contents and edges; a crossing counts any node (goal included); ELK componentComponent spacing = node_gap_F; page contract adds `data-mark` and edge from/to; pencil card corner mark sits d/2 inside the corner — ADR? yes (#31: page contract, check kinds)
 - #32: `--pack` is exactly a `cli/packs/<name>/` folder holding pack.json, else exit 2 listing the installed packs; fetch follows HTTP redirects by hand (cap 20) and checks every hop and every later main-frame navigation by resolved address (RFC 1918, loopback, link-local, 100.64/10, IPv6 equivalents), exit 1; a directly given loopback URL is allowed; an inward sub-resource is blocked, not fatal — ADR? yes (#31: fetch surface, amend ADR-0009)
@@ -29,6 +31,7 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 - #36: setup.sh treats Chromium as missing when a headless launch fails (the headless shell is a separate install; ~0.5 s per run) — ADR? no
 
 ## Blocked
+- #24 (for the author, at the human run): on the clean Wayfinder script the hand-run look raised steps 7 and 9 (narration not visible: "no one-line gist on screen", "no sessions shown"), and the emphasis-vs-narration rule raised 9 and 11, so criterion 4's clean case ("Nothing to report.") does not hold as the script stands. Either the script's narration changes, or the rule loosens — downstream: none
 
 ## Nits
 - #34: the pencil Wayfinder budget test (< 60 s, ADR-0001) has 2.7× headroom, below the probes' 4×; the player settle loop has ~2.5×
