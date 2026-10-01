@@ -1,7 +1,7 @@
-// The check pass (#22, ADR-0004, ADR-0007): before its one capture, render seeks to each step's rest and measures label
-// x-height against the floor, overlap, and captions past two lines; it writes a keyframe per step and review.md, and
-// any finding stops capture. Driven through the CLI (exit code, report, files written) and, for the keyframes, the
-// page's seek(t) in headless Chromium.
+// The check pass (#22, #33, ADR-0004, ADR-0007, ADR-0016): before its one capture, render seeks to each step's rest and
+// measures label x-height against the floor, overlap (state marks included), edges through a node, and captions past
+// two lines; it writes a keyframe per step and review.md, and any finding stops capture. Driven through the CLI (exit
+// code, report, files written) and, for the keyframes, the page's seek(t) in headless Chromium.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
@@ -11,23 +11,23 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require('playwright');
 const { main } = require('../cli.js');
-const { writeScript, TWO_NODE, grid, open, psnr } = require('./scripts.js');
+const { writeScript, TWO_NODE, grid, lanes, open, psnr } = require('./scripts.js');
 
 const FPS = 30;
 const render = (file, ...flags) => main(['render', file, '--pack', 'standard', ...flags]);
-const outOf = file => path.join(path.dirname(file), '../../local-data', path.basename(path.dirname(file)), 'render/standard');
-const written = (file, report) => report.written.map(p => path.relative(outOf(file), p)).sort();
-const read = (file, name) => fs.readFileSync(path.join(outOf(file), name), 'utf8');
+const outOf = (file, pack = 'standard') => path.join(path.dirname(file), '../../local-data', path.basename(path.dirname(file)), `render/${pack}`);
+const written = (file, report, pack) => report.written.map(p => path.relative(outOf(file, pack), p)).sort();
+const read = (file, name, pack) => fs.readFileSync(path.join(outOf(file, pack), name), 'utf8');
 const BEFORE_CAPTURE = ['explainer.html', 'keyframes/step-01.png', 'keyframes/step-02.png', 'layout.json', 'review.md'];
 
 // Step 2's narration, 208 characters: three lines in the standard pack's caption, and 13.9 s to read at 15 cps.
 const THREE_LINES = TWO_NODE.replace('narration: Then review it.\n    duration_s: 3', `narration: ${'Then review it. '.repeat(13).trim()}\n    duration_s: 14`);
 
-function stopped(file, code, report) {
+function stopped(file, code, report, pack) {
   assert.equal(code, 3, JSON.stringify(report.errors));
   assert.equal(report.capture, undefined, 'nothing was captured');
-  assert.deepEqual(written(file, report), BEFORE_CAPTURE);
-  const review = read(file, 'review.md');
+  assert.deepEqual(written(file, report, pack), BEFORE_CAPTURE);
+  const review = read(file, 'review.md', pack);
   assert.match(review, /^## Findings$/m);
   for (const f of report.findings) {
     assert.equal(f.accepted, undefined);
@@ -42,6 +42,109 @@ test('a seeded overlap, an annotation with no clear place, is reported and stops
   assert.ok(report.findings.length > 0);
   for (const f of report.findings) assert.deepEqual([f.step, f.check], [2, 'overlap'], f.message);
   assert.ok(report.findings.some(f => /annotation "Look here"/.test(f.message)), JSON.stringify(report.findings));
+});
+
+// A group whose label runs wider than its one card, the card claimed in step 2. The pencil pack draws claimed as a
+// glyph in a circle on the card's top-right corner, which stands up into the group's label whatever ELK's spacing.
+const CLAIMED_UNDER_LABEL = `${TWO_NODE.slice(0, TWO_NODE.indexOf('graph:'))}graph:
+  group_types: [map]
+  node_types: [ticket.task]
+  edge_kinds: []
+  states: [claimed]
+  groups:
+    - {id: board, type: map, label: The board everyone works from, cite: {src: notes, quote: "write it"}}
+  nodes:
+    - {id: write, type: ticket.task, group: board, label: Write, cite: {src: notes, quote: "write it"}}
+
+steps:
+  - actions:
+      - {reveal: [board, write]}
+    narration: First, write it.
+    duration_s: 2
+    cite: {src: notes, quote: "write it"}
+  - actions:
+      - {set_state: {target: write, state: claimed}}
+    narration: Then claim it.
+    duration_s: 3
+    cite: {src: notes, quote: "write it"}
+`;
+
+test('a seeded state mark on another element, a claimed mark up in its group\'s label, is an overlap that names the mark, and stops capture', async () => {
+  const file = writeScript(CLAIMED_UNDER_LABEL);
+  const { code, report } = await main(['render', file, '--pack', 'pencil']);
+  stopped(file, code, report, 'pencil');
+  assert.deepEqual(report.findings.map(f => [f.step, f.check]), [[2, 'overlap']], JSON.stringify(report.findings));
+  assert.match(report.findings[0].message, /write.*claimed mark/);
+  assert.match(report.findings[0].message, /group board/);
+});
+
+// Write blocks Check and Review, Check blocks Review; Check claimed in step 2. The long edge write-review runs over
+// Check one edge gap above it, where the pencil pack's claimed mark stands up out of the card's top edge.
+const MARK_ON_EDGE = `${TWO_NODE.slice(0, TWO_NODE.indexOf('graph:'))}graph:
+  group_types: []
+  node_types: [ticket.task]
+  edge_kinds: [blocks]
+  states: [claimed]
+  nodes:
+    - {id: write, type: ticket.task, label: Write, cite: {src: notes, quote: "write it"}}
+    - {id: check, type: ticket.task, label: Check, cite: {src: notes, quote: "write it"}}
+    - {id: review, type: ticket.task, label: Review, cite: {src: notes, quote: "review it"}}
+  edges:
+    - {id: write-check, from: write, to: check, kind: blocks, cite: {src: notes, quote: "write it"}}
+    - {id: check-review, from: check, to: review, kind: blocks, cite: {src: notes, quote: "review it"}}
+    - {id: write-review, from: write, to: review, kind: blocks, cite: {src: notes, quote: "write before review"}}
+
+steps:
+  - actions:
+      - {reveal: [write, check, review, write-check, check-review, write-review]}
+    narration: First, write it.
+    duration_s: 2
+    cite: {src: notes, quote: "write it"}
+  - actions:
+      - {set_state: {target: check, state: claimed}}
+    narration: Then claim it.
+    duration_s: 3
+    cite: {src: notes, quote: "write it"}
+`;
+
+test('a seeded state mark on an edge, a claimed mark under a long edge, is an overlap that names the mark and the edge, and stops capture', async () => {
+  const file = writeScript(MARK_ON_EDGE);
+  const { code, report } = await main(['render', file, '--pack', 'pencil']);
+  stopped(file, code, report, 'pencil');
+  assert.deepEqual(report.findings.map(f => [f.step, f.check, f.message]),
+    [[2, 'overlap', 'node check ("Check")\'s claimed mark overlaps edge write-review']], JSON.stringify(report.findings));
+});
+
+// One lane claimed in step 3. The standard pack draws claimed as a badge at the lane's right end, on its member Review
+// card: a group's mark is measured against its members, only a ring (which encircles them by design) is not.
+const LANE_CLAIMED = `${lanes(1).replace('states: []', 'states: [claimed]')}  - actions:
+      - {set_state: {target: lane0, state: claimed}}
+    narration: Claim it.
+    duration_s: 2
+    cite: {src: notes, quote: "write it"}
+`;
+
+test('a seeded group mark on its own member card, a claimed badge on the lane\'s Review card, is an overlap that names the mark, and stops capture', async () => {
+  const file = writeScript(LANE_CLAIMED);
+  const { code, report } = await render(file);
+  assert.equal(code, 3, JSON.stringify(report.errors));
+  assert.equal(report.capture, undefined, 'nothing was captured');
+  assert.ok(report.findings.length > 0 && report.findings.every(f => f.step === 3 && f.check === 'overlap'), JSON.stringify(report.findings));
+  assert.ok(report.findings.some(f => /group lane0's claimed mark/.test(f.message) && /node c0b/.test(f.message)), JSON.stringify(report.findings));
+});
+
+// Two lanes in one row, joined by an edge from lane 0's first card: the edge between siblings runs level out of its
+// source, so it must pass through lane 0's second card on its way to the gap.
+const THROUGH_A_CARD = lanes(2, { links: [[0, 1]] }).replace('from: c0b, to: c1a', 'from: c0a, to: c1a');
+
+test('a seeded edge through a card other than its ends is a crossing, and stops capture', async () => {
+  const file = writeScript(THROUGH_A_CARD);
+  const { code, report } = await render(file);
+  assert.equal(code, 3, JSON.stringify(report.errors));
+  assert.equal(report.capture, undefined);
+  assert.deepEqual(report.findings.map(f => [f.step, f.check]), [[4, 'crossing']], JSON.stringify(report.findings));
+  assert.match(report.findings[0].message, /edge l01 .*node c0b/);
+  assert.ok(read(file, 'review.md').includes(report.findings[0].message.replaceAll('|', '\\|')));
 });
 
 test('a seeded over-long label, which pushes every label under the x-height floor, is reported and stops capture', async () => {
@@ -158,6 +261,7 @@ test('render --frame graph takes a draft with no steps (Checkpoint 2), and --fra
   const { code, report } = await render(wayfinder, '--frame', '1,6,12');
   assert.equal(code, 0, JSON.stringify(report.errors));
   assert.deepEqual(written(wayfinder, report), ['frames/step-01.png', 'frames/step-06.png', 'frames/step-12.png']);
+  assert.deepEqual(report.findings, [], 'step 6\'s claimed marks clear the cards beside them');
   for (const png of report.written) assert.deepEqual(size(png), [1920, 1080]);
 });
 

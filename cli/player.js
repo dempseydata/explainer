@@ -1,9 +1,10 @@
 // The player: seek(t) draws exactly the frame at t; frameKey(t) changes exactly when its pixels do.
 // Inlined into explainer.html after the pack's libraries and `const DATA = {...}`. Every colour is a pack token, painted
 // as var(--token); every size is a rendered pixel (_px) or a multiple of the label x-height F (_F). Each element's group
-// carries data-id, and its outline data-outline; an edge's line carries data-line and its head data-head; each
-// annotation's group carries data-note. A pack with a `rough` block (pencil) strokes everything through rough.js from
-// an ideal outline, which is what its data-outline marks, and redraws the strokes at each boil tick.
+// carries data-id, and its outline data-outline; each state mark's group carries data-mark, its state; an edge's line
+// carries data-line and its head data-head; each annotation's group carries data-note. A pack with a `rough` block
+// (pencil) strokes everything through rough.js from an ideal outline, which is what its data-outline marks, and redraws
+// the strokes at each boil tick.
 const NS = 'http://www.w3.org/2000/svg';
 const svg = document.getElementById('frame');
 const pack = DATA.pack;
@@ -74,7 +75,7 @@ function marks(shape, parent, under) {
   const out = {};
   for (const [state, look] of Object.entries(pack.states)) {
     if (look.mark === 'none' || (look.mark === 'slot') !== under) continue;
-    const g = out[state] = add('g', { opacity: 0 }, parent);
+    const g = out[state] = add('g', { opacity: 0, 'data-mark': state }, parent);
     const cx = shape.cx ?? shape.x + shape.width / 2;
     const cy = shape.cy ?? shape.y + shape.height / 2;
     if (look.mark === 'slot') {
@@ -276,18 +277,20 @@ function arrow(points, look, seed) {
 
 function drawPencil() {
   const ideal = (look, attrs) => ({ fill: 'none', stroke: 'none', 'stroke-width': look.stroke_px, 'data-outline': '', ...attrs });
-  // The state marks: a graphite re-trace around the outline, a glyph in a circle on its top-right corner, or a glyph in
+  // The state marks: a graphite re-trace around the outline, a glyph in a circle at its top-right corner, or a glyph in
   // the badge slot at its right end.
-  const sketchMarks = (el, shape) => {
+  const sketchMarks = (el, shape, inset) => {
     el.marks = {};
     for (const [state, look] of Object.entries(pack.states)) {
       if (look.mark === 'none') continue;
-      const m = el.marks[state] = { g: add('g', { opacity: 0 }, el.g) };
+      const m = el.marks[state] = { g: add('g', { opacity: 0, 'data-mark': state }, el.g) };
       const key = `${el.g.dataset.id}:${state}`;
       if (look.mark === 'ring') m.part = sketch(m.g, key, seed => roughOutline(shape, look.offset_px, roughly(look, seed(0))));
       else if (look.mark === 'corner') {
-        const [cx, cy] = shape.r !== undefined ? [shape.cx + shape.r * Math.SQRT1_2, shape.cy - shape.r * Math.SQRT1_2] : [shape.x + shape.width, shape.y];
+        // On a card it is inset by its radius, to sit over the right end of the top edge, clear of the edges that bend
+        // beside the card (#33); on a group it centres on the corner, clear of the member card inside it.
         const d = look.size_F * F;
+        const [cx, cy] = shape.r !== undefined ? [shape.cx + shape.r * Math.SQRT1_2, shape.cy - shape.r * Math.SQRT1_2] : [shape.x + shape.width - inset * d, shape.y];
         m.part = sketch(m.g, key, seed => [rc.circle(cx, cy, d, roughly(look, seed(0), { fill: paint(look.fill), fillStyle: 'solid' })), glyph(look.glyph, cx, cy, look.glyph_F * F, n => seed(n + 1), look.stroke)]);
       } else if (look.mark === 'badge') {
         const d = L.badge_F * F;
@@ -312,7 +315,7 @@ function drawPencil() {
       ...(d ? [rc.rectangle(grp.x + d, grp.y + d, grp.width - 2 * d, grp.height - 2 * d, roughly(look, seed(1), { strokeWidth: look.stroke_px / 2 }))] : []),
     ], look.dash_px && { box: grown(grp, R.wipe_pad_px), dir: 'x' })];
     el.fades = grp.label ? [text(grp.x + L.group_pad_F * F, grp.y + L.group_pad_F * F + FONT * 0.6, grp.label, look.label_weight ?? 400, el.g)] : [];
-    sketchMarks(el, grp);
+    sketchMarks(el, grp, 0);
     // A group's highlight re-traces its frame.
     sketchHighlight(el, o => roughOutline(grp, hlLook.offset_px, o));
   }
@@ -343,7 +346,7 @@ function drawPencil() {
     const [cx, cy, size] = nodeLabel(n, look, shape, el.g);
     sketch(glyphAt, `${n.id}:glyph`, seed => glyph(look.glyph, cx, cy, size, seed));
     el.fades = [glyphAt, el.g.lastChild];
-    sketchMarks(el, shape);
+    sketchMarks(el, shape, 1 / 2);
     // A node's highlight is a scribbled ellipse around it, clear of a circle's label.
     const b = boxOf(shape);
     const off = hlLook.offset_px;

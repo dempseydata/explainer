@@ -248,8 +248,11 @@ async function layout(script, pack) {
   const cards = nodes.filter(n => pack.node_types[n.type].shape === 'rect');
   const cardWidth = Math.max(0, ...cards.map(n => textWidth(weight(pack.node_types[n.type]), n.label, font0)))
     + u(2 * L.card_pad_F + L.icon_F + 2 * L.icon_gap_F + L.badge_F);
+  // Unconnected parts of one level are spaced as nodes are, not at ELK's fixed default, so state marks that stand out
+  // of a card (a pencil corner, a ring) clear the card beside it (#33).
   const spacing = {
-    'elk.spacing.nodeNode': String(u(L.node_gap_F)), 'elk.layered.spacing.nodeNodeBetweenLayers': String(u(L.layer_gap_F)),
+    'elk.spacing.nodeNode': String(u(L.node_gap_F)), 'elk.spacing.componentComponent': String(u(L.node_gap_F)),
+    'elk.layered.spacing.nodeNodeBetweenLayers': String(u(L.layer_gap_F)),
     'elk.spacing.edgeNode': String(u(L.edge_gap_F)), 'elk.layered.spacing.edgeNodeBetweenLayers': String(u(L.edge_gap_F)),
   };
   const elkNode = n => {
@@ -506,7 +509,7 @@ function playerHtml(script, pack, lay) {
     title: script.meta.title, frame: FRAME, pack: look, F: lay.F, font_px: lay.font_px, icons,
     groups: (script.graph.groups ?? []).map(g => ({ ...lay.groups[g.id], id: g.id, type: g.type, label: g.label })),
     nodes: script.graph.nodes.map(n => ({ ...lay.nodes[n.id], id: n.id, type: n.type, label: n.label })),
-    edges: (script.graph.edges ?? []).map(e => ({ ...lay.edges[e.id], id: e.id, kind: e.kind })),
+    edges: (script.graph.edges ?? []).map(e => ({ ...lay.edges[e.id], id: e.id, kind: e.kind, from: e.from, to: e.to })),
     annotations: lay.annotations,
     narration: script.steps.map(s => s.narration),
     ...timeline(script, pack),
@@ -555,7 +558,8 @@ async function withPlayer(html, use) {
 
 // Run in the page: seeks to t and measures what the player draws there. It returns the labels whose x-height is under
 // the floor; each pair of boxes that belong to different things and overlap (a node is its outline and label, a group
-// its label, an annotation its box); and the caption's line count.
+// its label, an annotation its box, a state mark its own box); each edge that passes through a node other than its two
+// ends; and the caption's line count.
 function measureFrame({ t, floor }) {
   seek(t);
   const shown = e => { for (; e.id !== 'frame'; e = e.parentElement) if (getComputedStyle(e).opacity === '0') return false; return true; };
@@ -568,24 +572,65 @@ function measureFrame({ t, floor }) {
     const x = ctx.measureText('x').actualBoundingBoxAscent;
     if (x < floor - 0.01) small.push({ text: e.textContent, x });
   }
-  const nodes = new Set(DATA.nodes.map(n => n.id));
+  const nodes = new Map(DATA.nodes.map(n => [n.id, n]));
+  const nodeName = id => `node ${id} ("${nodes.get(id).label}")`;
+  const box = (parts, grow = 0) => {
+    const b = parts.map(p => p.getBBox());
+    return { x: Math.min(...b.map(r => r.x)) - grow, y: Math.min(...b.map(r => r.y)) - grow,
+      right: Math.max(...b.map(r => r.x + r.width)) + grow, bottom: Math.max(...b.map(r => r.y + r.height)) + grow };
+  };
+  const outlineOf = g => g.querySelector(':scope > [data-outline]');
   const boxes = [];
   for (const g of document.querySelectorAll('#frame [data-id], #frame [data-note]')) {
     const label = g.querySelector(':scope > text');
     const id = g.dataset.id;
     const [name, parts] = id === undefined ? [`the annotation "${label.textContent}"`, [g.querySelector(':scope > rect')]]
-      : nodes.has(id) ? [`node ${id} ("${label.textContent}")`, [g.querySelector(':scope > [data-outline]'), label]]
+      : nodes.has(id) ? [nodeName(id), [outlineOf(g), label]]
         : [`group ${id}'s label ("${label?.textContent}")`, label ? [label] : []];
     if (!parts.length || !shown(g)) continue;
-    const b = parts.map(p => p.getBBox());
-    boxes.push({ name, x: Math.min(...b.map(r => r.x)), y: Math.min(...b.map(r => r.y)),
-      right: Math.max(...b.map(r => r.x + r.width)), bottom: Math.max(...b.map(r => r.y + r.height)) });
+    boxes.push({ name, own: g, ...box(parts) });
   }
+  // A state mark, its stroke included, against everything but its own element; a ring, which encircles its element by
+  // design, is not measured against what lies inside it either (a group's members).
+  // A slot fills its element's outline under the body: it is the element's own area, so it is not measured.
+  const marks = [];
+  for (const m of document.querySelectorAll('#frame [data-mark]')) {
+    const look = DATA.pack.states[m.dataset.mark];
+    if (!shown(m) || look.mark === 'slot') continue;
+    const g = m.closest('[data-id]');
+    const whose = nodes.has(g.dataset.id) ? nodeName(g.dataset.id) : `group ${g.dataset.id}`;
+    const mark = { name: `${whose}'s ${m.dataset.mark} mark`, own: g, within: look.mark === 'ring' ? box([outlineOf(g)]) : undefined,
+      ...box([m], (look.stroke_px ?? 0) / 2) };
+    boxes.push(mark);
+    if (look.mark !== 'ring') marks.push(mark);
+  }
+  const inside = (b, w) => w && b.x >= w.x && b.y >= w.y && b.right <= w.right && b.bottom <= w.bottom;
   const overlaps = [];
   boxes.forEach((a, i) => boxes.slice(i + 1).forEach(b => {
+    if (a.own === b.own || inside(b, a.within) || inside(a, b.within)) return;
     if (Math.min(a.right, b.right) - Math.max(a.x, b.x) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y) > 0.5) overlaps.push([a.name, b.name]);
   }));
-  return { small, overlaps, lines: document.querySelectorAll('#frame [data-caption] tspan').length };
+  // Whether a segment enters a box shrunk by half a pixel (Liang–Barsky), so an edge along a border does not count.
+  const enters = ([x0, y0], [x1, y1], r) => {
+    let [lo, hi] = [0, 1];
+    for (const [p, q] of [[x0 - x1, x0 - r.x - 0.5], [x1 - x0, r.right - 0.5 - x0], [y0 - y1, y0 - r.y - 0.5], [y1 - y0, r.bottom - 0.5 - y0]]) {
+      if (p === 0) { if (q <= 0) return false; } else if (p < 0) lo = Math.max(lo, q / p); else hi = Math.min(hi, q / p);
+    }
+    return lo < hi;
+  };
+  const at = id => document.querySelector(`#frame [data-id="${CSS.escape(id)}"]`);
+  const crossings = [];
+  for (const e of DATA.edges) {
+    if (!shown(at(e.id))) continue;
+    const through = r => e.points.slice(1).some((p, k) => enters(e.points[k], p, r));
+    // A mark on an edge, its own element's included; a ring meets its element's edges by design, so is not measured.
+    for (const m of marks) if (through(m)) overlaps.push([m.name, `edge ${e.id}`]);
+    for (const n of DATA.nodes) {
+      if (n.id === e.from || n.id === e.to || !shown(at(n.id))) continue;
+      if (through(box([outlineOf(at(n.id))]))) crossings.push([e.id, nodeName(n.id)]);
+    }
+  }
+  return { small, overlaps, crossings, lines: document.querySelectorAll('#frame [data-caption] tspan').length };
 }
 
 // The check pass (ADR-0004, ADR-0007): at each frame's time, measures the bare player and shoots it as a PNG. A finding
@@ -601,6 +646,7 @@ async function checkPass(html, frames) {
       shots.push(await page.screenshot({ type: 'png' }));
       for (const l of m.small) find(`x ${l.text}`, step, 'x-height', `"${l.text}" has an x-height of ${l.x.toFixed(1)} px, under the ${X_HEIGHT.floor} px floor`);
       for (const [a, b] of m.overlaps) find(`o ${a} ${b}`, step, 'overlap', `${a} overlaps ${b}`);
+      for (const [e, n] of m.crossings) find(`x-ing ${e} ${n}`, step, 'crossing', `edge ${e} passes through ${n}`);
       if (m.lines > 2) find(`c ${step}`, step, 'caption', `the caption wraps to ${m.lines} lines in the pack's face; the band holds two`);
     }
     return { shots, findings: [...findings.values()] };
