@@ -36,6 +36,18 @@ test('render writes explainer.html and layout.json, with the check, capture and 
   assert.deepEqual(Object.keys(layout.edges), ['write-review']);
 });
 
+// ADR-0015: the test-only option stops the render where capture would begin.
+test('main with {capture: false} writes the render\'s files up to review.md, and stops before capture', async () => {
+  const script = writeScript(TWO_NODE);
+  const { code, report } = await main(['render', script, '--pack', 'standard'], { capture: false });
+  assert.equal(code, 0, JSON.stringify(report.errors));
+  assert.equal(report.capture, undefined);
+  const out = path.join(path.dirname(script), '../../local-data/two-node/render/standard');
+  assert.deepEqual(report.written.sort(), ['explainer.html', 'keyframes/step-01.png', 'keyframes/step-02.png', 'layout.json', 'review.md']
+    .map(f => path.join(out, f)));
+  assert.deepEqual(fs.readdirSync(out).sort(), ['explainer.html', 'keyframes', 'layout.json', 'review.md'], 'no MP4, captions or narration');
+});
+
 test('render refuses an invalid script and writes nothing', async () => {
   const script = writeScript(TWO_NODE.replace('from: write', 'from: nowhere'));
   const { code, report } = await main(['render', script, '--pack', 'standard']);
@@ -330,7 +342,7 @@ for (const pack of ['standard', 'pencil']) {
 test('the standard pack lists exactly Inter (OFL) and Lucide (ISC and MIT), and explainer.html carries both notices', async () => {
   const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/standard/pack.json'), 'utf8'));
   assert.deepEqual(pack.licences.map(l => [l.assets, l.licence]), [['Inter', 'OFL-1.1'], ['Lucide', 'ISC AND MIT']]);
-  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'standard']);
+  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'standard'], { capture: false });
   assert.equal(code, 0);
   const html = fs.readFileSync(report.written.find(p => p.endsWith('explainer.html')), 'utf8');
   assert.deepEqual([...html.matchAll(/<!-- (.+) — (.+)\n/g)].map(m => [m[1], m[2]]), [['Inter', 'OFL-1.1'], ['Lucide', 'ISC AND MIT']]);
@@ -341,7 +353,7 @@ test('the standard pack lists exactly Inter (OFL) and Lucide (ISC and MIT), and 
 test('the pencil pack lists exactly Kalam (OFL) and rough.js (MIT), and explainer.html carries both notices and rough.js inlined', async () => {
   const pack = JSON.parse(fs.readFileSync(path.join(__dirname, '../packs/pencil/pack.json'), 'utf8'));
   assert.deepEqual(pack.licences.map(l => [l.assets, l.licence]), [['Kalam', 'OFL-1.1'], ['rough.js', 'MIT']]);
-  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'pencil']);
+  const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', 'pencil'], { capture: false });
   assert.equal(code, 0, JSON.stringify(report));
   const html = fs.readFileSync(report.written.find(p => p.endsWith('explainer.html')), 'utf8');
   assert.deepEqual([...html.matchAll(/<!-- (.+) — (.+)\n/g)].map(m => [m[1], m[2]]), [['Kalam', 'OFL-1.1'], ['rough.js', 'MIT']]);

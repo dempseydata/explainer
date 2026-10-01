@@ -293,7 +293,7 @@ test('the fog patches keep reading order however they are declared', async () =>
   const yaml = fs.readFileSync(file, 'utf8');
   const patches = ['r1', 'r2', 'r3'].map(id => yaml.split('\n').find(line => line.startsWith(`    - {id: ${id}, type: fog`)));
   fs.writeFileSync(file, yaml.replace(patches.join('\n'), [...patches].reverse().join('\n')));
-  const { code, report } = await main(['render', file, '--pack', 'standard']);
+  const { code, report } = await main(['render', file, '--pack', 'standard'], { capture: false });
   assert.equal(code, 0, JSON.stringify(report.errors));
   const reversed = JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8'));
   assert.deepEqual(reversed.packing.map.flat(), ['r1', 'r2', 'r3']);

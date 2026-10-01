@@ -14,7 +14,7 @@ let browser, url, pencil, tmp;
 
 before(async () => {
   const bare = async name => {
-    const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', name]);
+    const { code, report } = await main(['render', writeScript(TWO_NODE), '--pack', name], { capture: false });
     assert.equal(code, 0, JSON.stringify(report));
     return `${pathToFileURL(report.written.find(p => p.endsWith('explainer.html'))).href}?bare`; // the frame alone, as capture loads it (ADR-0007)
   };

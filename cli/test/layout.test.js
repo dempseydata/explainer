@@ -8,12 +8,17 @@ const { main } = require('../cli.js');
 const { lanes, writeScript } = require('./scripts.js');
 
 // Layout is judged by its properties whatever the check pass finds (check.test.js tests that), so findings are accepted:
-// four chained lanes cannot wrap, and their labels sit under the x-height floor.
-async function render(yaml) {
-  const file = writeScript(yaml);
-  const { code, report } = await main(['render', file, '--pack', 'standard', '--accept-findings']);
-  assert.equal(code, 0, JSON.stringify(report.errors));
-  return { script: parse(yaml), lay: JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8')) };
+// four chained lanes cannot wrap, and their labels sit under the x-height floor. Nothing here needs the MP4, so the render
+// stops before capture (ADR-0015), and tests that lay out the same script share its render.
+const renders = new Map();
+function render(yaml) {
+  if (!renders.has(yaml)) renders.set(yaml, (async () => {
+    const file = writeScript(yaml);
+    const { code, report } = await main(['render', file, '--pack', 'standard', '--accept-findings'], { capture: false });
+    assert.equal(code, 0, JSON.stringify(report.errors));
+    return { script: parse(yaml), lay: JSON.parse(fs.readFileSync(report.written.find(p => p.endsWith('layout.json')), 'utf8')) };
+  })());
+  return renders.get(yaml);
 }
 
 // Each edge whose ends sit under different siblings of one packed parent, with those siblings in different rows.

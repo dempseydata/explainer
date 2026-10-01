@@ -7,7 +7,7 @@
     "explainer": "cli.js"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=4 test/*.test.js"
   },
   "dependencies": {
     "ajv": "^8.20.0",

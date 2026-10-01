@@ -14,12 +14,14 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 | #36 | built, open (human run) | 49303e7 | 1 | 109 / 189 s | round-1 must-fix was the untracked process copy (fixed by the orchestrator, as authorised); links re-pointed, `npm link` re-run from cli/ |
 | #28 | done | fde3f1b | 0 | 109 / 190 s | clean review; 3 wording nits fixed by the orchestrator |
 | #32 | done | 086c07c | 2 | 115 / 188 s | round 1: meta-refresh/JS navigation inward, unbounded loop, CDP throw lost the report, sub-resource failed the fetch; round 2 (orchestrator): proxy env in the loop test, 100.64/10 blocked |
-| #33 | done | this commit | 3 | 119 / 191 s | r1: a group mark over its own member went unreported; r2: marks vs edges (pencil step-6 @ on edge b1), pencil card corner mark inset d/2; r3: inset for cards only |
+| #33 | done | c32484b | 3 | 119 / 191 s | r1: a group mark over its own member went unreported; r2: marks vs edges (pencil step-6 @ on edge b1), pencil card corner mark inset d/2; r3: inset for cards only |
+| #34 | done | this commit | 1 | 120 / 78 s | capture:false moves took 191→149 s; round 1 (orchestrator, measured by reviewer): --test-concurrency=4 |
 
 ## Owed
 - #31: CONTEXT.md Finding omits `crossing` (and the caption check)
 
 ## Decisions
+- #34: renders shared per test file by script text; the layout read-back test keeps full capture (it compares MP4 bytes); test files run 4 at a time (no shared paths or ports) — ADR? no
 - #33: slot marks (fog) are not measured; only ring marks are exempt from their own contents and edges; a crossing counts any node (goal included); ELK componentComponent spacing = node_gap_F; page contract adds `data-mark` and edge from/to; pencil card corner mark sits d/2 inside the corner — ADR? yes (#31: page contract, check kinds)
 - #32: `--pack` is exactly a `cli/packs/<name>/` folder holding pack.json, else exit 2 listing the installed packs; fetch follows HTTP redirects by hand (cap 20) and checks every hop and every later main-frame navigation by resolved address (RFC 1918, loopback, link-local, 100.64/10, IPv6 equivalents), exit 1; a directly given loopback URL is allowed; an inward sub-resource is blocked, not fatal — ADR? yes (#31: fetch surface, amend ADR-0009)
 - #28: source text is data; http(s) URLs only; slugs and source ids `[a-z0-9-]`; the draft and extracts written with the file tool; quotes as single-quoted YAML — ADR? no
@@ -29,6 +31,7 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 ## Blocked
 
 ## Nits
+- #34: the pencil Wayfinder budget test (< 60 s, ADR-0001) has 2.7× headroom, below the probes' 4×; the player settle loop has ~2.5×
 - #33: crossing tests the goal circle by its bounding box (corner false positives possible); same-row dog-leg routing is reported, not fixed (ADR-0003 defers routing)
 - #33: the check measures mark bounding boxes, so a group corner mark beside a member card corner can be a false positive (circle clears by ~0.46F); measure marks as circles if a real script hits it
 - #32: DNS rebinding between check and connect is a ponytail ceiling; a sub-resource fetched directly from a private address (no redirect) still loads; the loop test needs a Node that honours NODE_USE_ENV_PROXY and package.json has no `engines`

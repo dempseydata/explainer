@@ -795,17 +795,18 @@ async function fetchExtract(url, file, report, overwrite) {
   return { code: 0, report: { ...report, words: count } };
 }
 
-// workers: the most pages capture uses at once (ADR-0001's knee is four).
-async function main(argv, { workers = 4 } = {}) {
+// Test-only options: workers, the most pages capture uses at once (ADR-0001's knee is four); capture: false stops the
+// render where capture would begin (ADR-0015).
+async function main(argv, { workers = 4, capture = true } = {}) {
   const report = { errors: [], warnings: [], written: [] };
   try {
-    return await run(argv, report, workers);
+    return await run(argv, report, workers, capture);
   } catch (e) {
     return { code: 70, report: { ...report, errors: [{ message: String(e) }] } };
   }
 }
 
-async function run(argv, report, workers) {
+async function run(argv, report, workers, capturing) {
   const draft = argv.includes('--draft');
   const packAt = argv.indexOf('--pack');
   const frameAt = argv.indexOf('--frame');
@@ -888,6 +889,7 @@ async function run(argv, report, workers) {
   shots.forEach((shot, i) => write(`keyframes/${png(i + 1)}`, shot));
   write('review.md', reviewMd(script, pack, report.findings));
   if (findings.length && !accept) return { code: 3, report };
+  if (!capturing) return { code: 0, report };
 
   const { mp4, ...captured } = await capture(html, Math.round(duration_s * FPS), workers);
   report.capture = captured;
