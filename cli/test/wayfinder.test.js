@@ -10,6 +10,7 @@ const { pathToFileURL } = require('node:url');
 const { parse } = require('yaml');
 const { chromium } = require('playwright');
 const { main } = require('../cli.js');
+const { open: openAt, psnr } = require('./scripts.js');
 
 const EXAMPLE = path.join(__dirname, '../../explainers/wayfinder');
 const FPS = 30;
@@ -39,12 +40,7 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function open(name = 'standard') {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  await page.goto(renders[name].url);
-  await page.evaluate(() => document.fonts.ready);
-  return page;
-}
+const open = async (name = 'standard') => (await openAt(browser, renders[name].url)).page;
 
 
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -247,13 +243,11 @@ for (const name of PACKS) {
   });
 
   test(`${name}: purity holds for the Wayfinder render: a cold seek to t matches a sequentially reached t at >= 50 dB PSNR`, async () => {
-    const { spawnSync } = require('node:child_process');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-psnr-'));
-    const psnr = (a, b) => {
+    const psnrOf = (a, b) => {
       fs.writeFileSync(path.join(tmp, 'a.png'), a);
       fs.writeFileSync(path.join(tmp, 'b.png'), b);
-      const log = spawnSync('ffmpeg', ['-hide_banner', '-i', path.join(tmp, 'a.png'), '-i', path.join(tmp, 'b.png'), '-lavfi', 'psnr', '-f', 'null', '-']).stderr.toString();
-      return Number(/average:(\S+)/.exec(log)[1].replace('inf', 'Infinity'));
+      return psnr(path.join(tmp, 'a.png'), path.join(tmp, 'b.png'));
     };
     // Mid-reveal, mid-fog, mid-annotation, mid-frontier, mid-hide, mid-highlight, the last annotation, the final rest; in
     // pencil, each lands on its own boil tick.
@@ -270,7 +264,7 @@ for (const name of PACKS) {
     for (const f of picks) {
       const cold = await open(name);
       await cold.evaluate(t => seek(t), f / FPS);
-      const db = psnr(await cold.screenshot({ type: 'png' }), sequential[f]);
+      const db = psnrOf(await cold.screenshot({ type: 'png' }), sequential[f]);
       assert.ok(db >= 50, `frame ${f}: ${db} dB`);
       await cold.close();
     }

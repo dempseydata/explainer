@@ -48,10 +48,10 @@ Check `local-data` is ignored: `git -C '<root>' check-ignore -q 'local-data/<slu
 
 Ask for sources: URLs, files, notes. An **extract** is written by `fetch`, never by you; one transcribed from another tool's output is marked as such. Each source gets an id, and ends up as one of:
 
-- **A URL:** `node "$CLI/cli.js" fetch '<url>' '<root>/local-data/<slug>/sources/<id>.txt'`. On exit 0, record `{id, title, url, path: local-data/<slug>/sources/<id>.txt, fetched: <today>}`. On exit 2, read the error: an existing extract, ask before re-running with `--overwrite`; a path or symlink refusal is a bug in this skill, so stop and report it. Only exit 1 (an HTTP or network error, or under 100 words) leads to the next line.
+- **A URL:** `node "$CLI/cli.js" fetch '<url>' '<root>/local-data/<slug>/sources/<id>.txt'`. On exit 0, record `{id, title, url, path: local-data/<slug>/sources/<id>.txt, fetched: <today>}`. On exit 2, read the error: an existing extract, ask before re-running with `--overwrite`, and if the author declines, record the source with the existing extract, its `fetched` the extract's file date; a path or symlink refusal is a bug in this skill, so stop and report it. Only exit 1 (an HTTP or network error, or under 100 words) leads to the next line.
 - **Only if `fetch` exited 1:** name the fetch tools you actually have (for example a web-extract tool), and offer them. If the author picks one, write its output to that path yourself and add `via: <tool name>` to the source. Its quotes are *transcribed*: say so wherever they are shown. This is the only extract that passes through you, and it is marked.
 - **If nothing can fetch it:** the author saves the text at the path you name, or the source is dropped and the claims resting on it become **gaps**.
-- **A file in the project:** cite it in place, `{id, title, path: <path relative to root>, version: <git commit>}`. It must sit under the root.
+- **A file in the project:** cite it in place, `{id, title, path: <path relative to root>, version: '<git commit>'}` (quoted: an all-digit hash would read as a number). It must sit under the root.
 
 Every `path` is relative to the root.
 

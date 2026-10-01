@@ -18,12 +18,14 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 | #34 | done | 26e863b | 1 | 120 / 78 s | capture:false moves took 191→149 s; round 1 (orchestrator, measured by reviewer): --test-concurrency=4 |
 | #24 | built, open (human run) | eba9920 | 1 | 120 / 78 s | r1: exit before review.md (3, fast 0), unbounded waiter, temp dir leak, expired transient read as a change; 3 nits by the orchestrator (viewer never a fork, stamp needs string pack+sha256, path printed before cp); `~/.claude/skills/explainer-render` linked |
 | #26 | built, open (human run, M6) | 6a4c404 | 1 | 120 / 78 s | #25 edge waived; r1 (orchestrator, reviewer-prescribed one-liners): edit-in-place ran the check pass and look in every pack (ADR-0005: geometry in the chosen pack only); `cd` into cli/packs moved the session cwd (also fixed in /explainer-render); slug clash guard |
-| #31 | done | this commit | 1 | 120 / 80 s | ADR-0017–0021 + in-place amendments; r1: two ADR statements contradicted the code; the skill offered `focus`, which no pack maps (removed) |
+| #31 | done | 6806bac | 1 | 120 / 80 s | ADR-0017–0021 + in-place amendments; r1: two ADR statements contradicted the code; the skill offered `focus`, which no pack maps (removed) |
+| #35 | done | this commit | 1 | 123 / 78 s | 8 fixed now, 25 fixed earlier, 24 struck; clean review; orchestrator: player settle bound 5→12 s (4× headroom under concurrency), Next at the last hold goes to its rest, two ledger reasons corrected, declined --overwrite keeps the extract date |
 
 ## Owed
 - #31: CONTEXT.md Finding omits `crossing` (and the caption check)
 
 ## Decisions
+- #35: unknown CLI arguments (a mistyped flag included) exit 2 rather than being ignored; Next from a step's hold plays the next step; a declined --overwrite records the source with the existing extract — ADR? no (ADR-0017 and ADR-0007 already cover them)
 - #26: Emit strips the draft block, validates in every pack, then `mv`s the draft to script.yaml (write + remove in one move), then stamps; an edit copies the script with `cp` and appends a draft block; an edit takes its pack from the stamp and target_s from the current total; several drafts: one line each, then ask — ADR? yes (#31: the draft format and Emit)
 - #24: two background jobs (render + a review.md waiter bounded at 600 s); a findings stop writes "Not run: findings stopped capture." under ## Look; emphasis is checked against what the narration names (the misplaced-highlight case needs it); the pack defaults to the stamp's; look.md takes any folder of step-NN.png (#26 must pass every step to --frame) — ADR? no
 - #34: renders shared per test file by script text; the layout read-back test keeps full capture (it compares MP4 bytes); test files run 4 at a time (no shared paths or ports) — ADR? no
@@ -37,6 +39,7 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 - #24 (for the author, at the human run): on the clean Wayfinder script the hand-run look raised steps 7 and 9 (narration not visible: "no one-line gist on screen", "no sessions shown"), and the emphasis-vs-narration rule raised 9 and 11, so criterion 4's clean case ("Nothing to report.") does not hold as the script stands. Either the script's narration changes, or the rule loosens — downstream: none
 
 ## Nits
+- #35: `validate --dradt <script>` says it "does not take <script path>" rather than naming the bad flag; an unknown command gets no usage line; Next at the last hold has no test of its own
 - #31: ADR-0019 could say that without `data-caption` the caption is still x-height-checked as a label; only its line count goes unmeasured
 - #31: a rough pack using `slot` state marks crashes in drawOn (exit 70) and a plain pack with `corner` draws nothing; neither is reachable with the installed packs
 - #26: between Emit's strip and a restore the draft has no draft block; gaps are dropped at Emit without mention; a graph edit re-lays out untouched steps but shows only changed frames; exit 2 at Checkpoint 2 unhandled

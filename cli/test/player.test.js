@@ -162,7 +162,7 @@ async function frameAt(t) {
 }
 async function settles(page, t, what) {
   const want = await frameAt(t);
-  for (const until = Date.now() + 5000; await shown(page) !== want;) {
+  for (const until = Date.now() + 12000; await shown(page) !== want;) { // >= 4x the longest play awaited (2.97 s)
     assert.ok(Date.now() < until, `${what}: the frame never reached t = ${t.toFixed(3)}`);
     await page.waitForTimeout(50);
   }
@@ -260,6 +260,20 @@ test('the step bar is notched at each step boundary, sized by duration, and scru
   assert.deepEqual(await page.locator('#transcript [aria-current="step"]').allInnerTexts(), [NARRATION[1]]);
   await page.keyboard.press('ArrowLeft');
   await settles(page, REST[0], 'Back from a scrubbed position');
+  await page.close();
+});
+
+test('Next from a position scrubbed into a step\'s hold plays the next step, as it would from the rest', async () => {
+  const { page } = await openPage();
+  await page.getByRole('slider', { name: 'Position' }).fill('1'); // step 1's reveal ends at 0.4 s; it holds to 2 s
+  await settles(page, 1, 'scrubbed into the hold');
+  await page.keyboard.press('ArrowRight');
+  const held = await frameAt(REST[0]);
+  for (const until = Date.now() + 12000; await shown(page) === held;) { // step 2 starts playing, rather than nothing showing
+    assert.ok(Date.now() < until, 'Next from the hold: step 2 never started');
+    await page.waitForTimeout(50);
+  }
+  await settles(page, REST[1], 'Next from the hold');
   await page.close();
 });
 

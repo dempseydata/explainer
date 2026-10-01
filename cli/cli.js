@@ -551,8 +551,11 @@ async function withPlayer(html, use) {
       return page;
     }, dir);
   } finally {
-    await browser.close();
-    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      await browser.close();
+    } finally {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -814,6 +817,8 @@ async function run(argv, report, workers, capturing) {
   const [command, file, ...rest] = argv.filter((a, i) => !['--draft', '--overwrite', '--accept-findings'].includes(a)
     && ![packAt, frameAt].some(at => at >= 0 && (i === at || i === at + 1)));
   const usage = message => ({ code: 2, report: { ...report, errors: [{ message }] } });
+  const extra = rest.slice(command === 'fetch' ? 1 : 0);
+  if (extra.length) return usage(`${command} does not take ${extra.join(' ')}`);
   if (command === 'fetch' && file && rest[0]) {
     // Fetched third-party text lives only in gitignored <root>/local-data/<slug>/sources/ (#8, ADR-0009).
     const extract = path.resolve(rest[0]);

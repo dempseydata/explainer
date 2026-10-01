@@ -117,6 +117,15 @@ test('validate --pack with no such pack is a usage error', async () => {
   assert.equal(code, 2);
 });
 
+test('an argument a command does not take, such as a mistyped flag, is a usage error, and nothing is written', async () => {
+  for (const args of [['validate', writeScript(TWO_NODE), 'extra'], ['render', writeScript(TWO_NODE), '--pack', 'standard', '--accept-finding']]) {
+    const { code, report } = await main(args);
+    assert.equal(code, 2, args.join(' '));
+    assert.match(report.errors[0].message, /extra|--accept-finding/);
+    assert.deepEqual(report.written, []);
+  }
+});
+
 // #32: --pack names an installed pack; a path to a pack.json anywhere else is not loaded.
 test('--pack that is not exactly an installed pack name is a usage error naming the installed packs', async t => {
   const packs = path.join(__dirname, '../packs');
@@ -270,6 +279,15 @@ test('validate --draft passes a draft with no steps and a draft block', async ()
   assert.equal(code, 0);
 });
 
+// ADR-0018: a draft sits at <root>/local-data/<slug>/script.draft.yaml, and its extracts resolve from the same root.
+test('a draft where the skill writes it validates, with its quotes checked', async () => {
+  const draft = path.join(path.dirname(writeScript(TWO_NODE)), '../../local-data/two-node/script.draft.yaml');
+  fs.writeFileSync(draft, DRAFT);
+  const { code, report } = await main(['validate', '--draft', draft]);
+  assert.deepEqual([report.errors, report.warnings], [[], []]);
+  assert.equal(code, 0);
+});
+
 test('validate --draft still checks the graph quotes', () =>
   fails(DRAFT.replace('quote: "drafts first"}', 'quote: "drafts last"}'), 'graph.nodes[0].cite.quote', /drafts last/, ['--draft']));
 
@@ -303,11 +321,14 @@ test('a source path that is absolute or climbs with .. leaves the root and fails
 
 // The Wayfinder example (#15): its SKILL.md is vendored beside it; the article extracts are gitignored.
 const EXAMPLE = path.join(__dirname, '../../explainers/wayfinder');
-
-test('the Wayfinder example validates in a fresh clone, warning only for the absent article extracts', async () => {
+const cloneExample = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-clone-'));
   fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
-  const { code, report } = await main(['validate', path.join(root, 'explainers', 'wayfinder', 'script.yaml')]);
+  return path.join(root, 'explainers', 'wayfinder', 'script.yaml');
+};
+
+test('the Wayfinder example validates in a fresh clone, warning only for the absent article extracts', async () => {
+  const { code, report } = await main(['validate', cloneExample()]);
   assert.deepEqual(report.errors, []);
   assert.equal(code, 0);
   assert.deepEqual(report.warnings.map(w => w.message.split(':')[0]), ['source aihero', 'source latent']);
@@ -324,11 +345,6 @@ test('with the article extracts present locally, every quote in the Wayfinder ex
   });
 
 // The standard pack (#18): Look A, from the resolution of #6.
-const cloneExample = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explainer-clone-'));
-  fs.cpSync(EXAMPLE, path.join(root, 'explainers', 'wayfinder'), { recursive: true });
-  return path.join(root, 'explainers', 'wayfinder', 'script.yaml');
-};
 
 // The pencil pack (#23) maps the identical script: no edits.
 for (const pack of ['standard', 'pencil']) {

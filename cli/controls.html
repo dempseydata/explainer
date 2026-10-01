@@ -55,6 +55,8 @@ if (!new URLSearchParams(location.search).has('bare')) {
   const START = DATA.steps.map(([start]) => start);
   const REST = DATA.steps.map(([, end]) => end - 1 / 30);
   const LAST = REST.at(-1);
+  // Where each step's actions have all played: from there to its rest the step holds.
+  const HOLD = DATA.steps.map(([start], i) => DATA.events.reduce((at, e) => (e.step === i ? Math.max(at, e.t0 + e.d) : at), start));
   const range = el('input', { type: 'range', min: 0, max: LAST, step: 'any', value: 0, 'aria-label': 'Position', 'aria-keyshortcuts': 'Home End' });
   const fill = el('div', { class: 'fill' });
   const notches = START.slice(1).map(start => el('div', { 'data-notch': '', style: `left: ${(start / LAST) * 100}%` }));
@@ -70,7 +72,8 @@ if (!new URLSearchParams(location.search).has('bare')) {
   box.append(frame, ...halves);
 
   // Stepping: every control goes through seek(t). A step's rest is its last frame; Next plays the next step to its
-  // rest, or finishes the step on screen; Back jumps to the previous rest, with no reverse animation.
+  // rest, or finishes the step on screen (from its hold, that is the next step); Back jumps to the previous rest, with no
+  // reverse animation.
   const EPS = 1e-6;
   let t = 0, run = null;
   let current;
@@ -102,7 +105,7 @@ if (!new URLSearchParams(location.search).has('bare')) {
   };
   const next = () => {
     const i = stepAt(t);
-    if (!run && t >= REST[i] - EPS) { if (i + 1 < REST.length) play(START[i + 1], REST[i + 1]); }
+    if (!run && t >= Math.min(HOLD[i], REST[i]) - EPS) { if (i + 1 < REST.length) play(START[i + 1], REST[i + 1]); else go(REST[i]); }
     else if (!run && t <= START[i] + EPS) play(START[i], REST[i]);
     else go(REST[i]);
   };

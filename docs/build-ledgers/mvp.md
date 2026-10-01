@@ -73,3 +73,64 @@ RULES (author, 2026-09-27): fix-round limit 3; a single small contained defect r
 - #22 nits: CONTEXT.md Finding omits the caption check; tests leave extra PNGs in temp output; suite now ~124 s
 - #23: step 6 Research's @ badge touches Task's frontier ring (ELK componentComponent spacing unset; predates #23; check pass doesn't measure state marks); dots guard checks pack.json text not player; bent dashed edge shows perpendicular leg at once; suite ~190 s
 - #25 nits: fetch/usage errors carry only message; declined --overwrite unspecified; quote version in YAML; several drafts found unspecified
+
+## Swept by #35
+Every nit and deferred finding above, with its outcome as of the follow-ups branch. The fix rounds recorded above for #13–#25 were fixed in their own tickets and are not repeated here.
+
+| Nit | Outcome |
+|---|---|
+| #13 tests need ffmpeg (undeclared) | fixed by #29: README lists Node, pandoc and ffmpeg |
+| #13 unmapped node type or verb exits 70 | fixed by #17: exit 1, located |
+| #13 unmapped edge kind exits 0, then the page throws | fixed by #17 |
+| #13 edge end on a group crashes layout | fixed by #14: Wayfinder's `h1` runs from group `map` in every suite run |
+| #13 `duration_s: 0` gives NaN opacity | fixed by #14: the schema requires `duration_s` > 0 |
+| #13 YAML line numbers lost on stderr | struck: the yaml library's message carries "at line N, column M" (probed) |
+| #13, #15 temp dirs not cleaned; #22 tests leave extra PNGs in temp output | struck: synthetic data in the OS temp dir, which the OS clears; per-test cleanup costs more than it saves |
+| #14 early return after schema errors | struck: the semantic checks assume a schema-valid script |
+| #14 YAML and empty-file locations | struck: parse errors carry their line; an empty file's errors name each missing key, and it has no line to give |
+| #14 draft `root:` ignored | struck: the review judged it fine; the skill reads it (ADR-0021) |
+| #14 normaliser strips every `*`, `_` and `` ` `` | struck: ADR-0002's rule, applied to quote and extract alike, so matching stays symmetric |
+| #14 `render --draft` ignored | fixed by #22: `--frame` is how render takes a draft |
+| #14 draft-location test | fixed (#35): a draft at `local-data/<slug>/script.draft.yaml` validates with its quotes checked |
+| #14 example must sit at `explainers/wayfinder/` | fixed by #15 |
+| #15 ADR-0002 line 46 stale | fixed by #15: amended in place |
+| #15 denylist has no private-project names | fixed by #30: names live in a list outside the repo |
+| #15 old `skillmd.md` and `pillitteri.txt` in local-data | struck: the author's untracked local files, theirs to delete |
+| #16 empty dirs may be created through a symlinked local-data | struck: nothing is written through it; the write itself is refused |
+| #16 `--overwrite` writes through a hardlink or raced symlink | struck: the path is the author's own; nothing untrusted plants links in local-data |
+| #16 `evaluate` has no timeout | struck: no page has hung there; a test would cost over 35 s, and the author can interrupt |
+| #16 `res.text()` assumes UTF-8 | struck: a mis-decoded extract usually fails its quote checks loudly; a quote copied from the mis-decoded text would still pass, so revisit if a non-UTF-8 source appears |
+| #16 `wx` EEXIST race exits 70 | struck: needs a concurrent writer in a millisecond window; 70 still reports it |
+| #16 extra args ignored | fixed (#35): an argument a command does not take, a mistyped flag included, exits 2 |
+| #17 `--pack ../x` resolves outside packs/ | fixed by #32 |
+| #17 verbs looked up twice | struck: two lookups in a small map; no gain |
+| #18 one shared player.js, OPEN before #23 | fixed by #23 |
+| #18 Wayfinder labels F = 15.48 px | fixed by #19 |
+| #18 frameKey lacks a step term | fixed by #20 |
+| #18 annotation cost ignores edges | struck: no script has hit it; add edges to the cost when one does |
+| #18 `cloneExample` duplicated | fixed (#35) |
+| #18 highlight branches | struck: two short branches; folding them saves nothing |
+| #19 amend ADR-0003's sibling-order wording | fixed by #19: amended in place |
+| #19 ADR-0003 figures stale | fixed by #31 |
+| #20 record `?bare` | fixed by #31: ADR-0019 |
+| #20 arrow keys on the focused slider step instead of nudge | struck: the arrows are the step keys page-wide (ADR-0007); the bar scrubs by pointer, Home and End |
+| #20 after a scrub into a hold, the first Next does nothing visible | fixed (#35): Next from a step's hold plays the next step |
+| #20 `end - 1/30` duplicated | struck: one constant in two files, one of them the page; threading it through DATA costs more |
+| #20 caption pack fields unvalidated | struck: packs ship with the CLI and are only ever installed ones (ADR-0017); the suite renders each |
+| #20 player.js comment cites a future check pass | fixed by #22: the check pass exists, so the comment holds |
+| #21 suite 98 s; layout-only tests to `--frame` | fixed by #34 |
+| #21 wayfinder.test.js keeps its own `open()` and `psnr()` | fixed (#35): uses the shared helpers |
+| #21 `rmSync` skipped if `browser.close` throws | fixed (#35) |
+| #21 graph cites not in narration.md | struck: adopted as the contract by #31 (ADR-0018), not changed |
+| #21 `capture.workers` counts idle workers | struck: only a render of 9 or fewer distinct frames leaves one idle; real scripts have hundreds |
+| #22 CONTEXT.md Finding omits the caption check | fixed by #31 |
+| #22 suite ~124 s | fixed by #34 |
+| #23 step 6's @ badge touches Task's frontier ring | fixed by #33 |
+| #23 dots guard checks pack.json, not the player | struck: the player only sets `hachure` or `solid`; dots could enter only through the pack the guard reads |
+| #23 bent dashed edge shows its perpendicular leg at once | struck: the clip wipe is the player's stated compromise for dashes; cosmetic |
+| #23 suite ~190 s | fixed by #34 |
+| #25 INSTALL method open | fixed by #29 and #36 (ADR-0010, ADR-0011) |
+| #25 fetch and usage errors carry only `message` | struck: ADR-0017 makes it the contract |
+| #25 declined `--overwrite` unspecified | fixed (#35): the skill records the source with the existing extract |
+| #25 quote `version` in YAML | fixed (#35): the skill quotes it |
+| #25 several drafts found, unspecified | fixed by #26 |
