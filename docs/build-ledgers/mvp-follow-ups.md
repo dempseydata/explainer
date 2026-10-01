@@ -16,12 +16,14 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 | #32 | done | 086c07c | 2 | 115 / 188 s | round 1: meta-refresh/JS navigation inward, unbounded loop, CDP throw lost the report, sub-resource failed the fetch; round 2 (orchestrator): proxy env in the loop test, 100.64/10 blocked |
 | #33 | done | c32484b | 3 | 119 / 191 s | r1: a group mark over its own member went unreported; r2: marks vs edges (pencil step-6 @ on edge b1), pencil card corner mark inset d/2; r3: inset for cards only |
 | #34 | done | 26e863b | 1 | 120 / 78 s | capture:false moves took 191→149 s; round 1 (orchestrator, measured by reviewer): --test-concurrency=4 |
-| #24 | built, open (human run) | this commit | 1 | 120 / 78 s | r1: exit before review.md (3, fast 0), unbounded waiter, temp dir leak, expired transient read as a change; 3 nits by the orchestrator (viewer never a fork, stamp needs string pack+sha256, path printed before cp); `~/.claude/skills/explainer-render` linked |
+| #24 | built, open (human run) | eba9920 | 1 | 120 / 78 s | r1: exit before review.md (3, fast 0), unbounded waiter, temp dir leak, expired transient read as a change; 3 nits by the orchestrator (viewer never a fork, stamp needs string pack+sha256, path printed before cp); `~/.claude/skills/explainer-render` linked |
+| #26 | built, open (human run, M6) | this commit | 1 | 120 / 78 s | #25 edge waived; r1 (orchestrator, reviewer-prescribed one-liners): edit-in-place ran the check pass and look in every pack (ADR-0005: geometry in the chosen pack only); `cd` into cli/packs moved the session cwd (also fixed in /explainer-render); slug clash guard |
 
 ## Owed
 - #31: CONTEXT.md Finding omits `crossing` (and the caption check)
 
 ## Decisions
+- #26: Emit strips the draft block, validates in every pack, then `mv`s the draft to script.yaml (write + remove in one move), then stamps; an edit copies the script with `cp` and appends a draft block; an edit takes its pack from the stamp and target_s from the current total; several drafts: one line each, then ask — ADR? yes (#31: the draft format and Emit)
 - #24: two background jobs (render + a review.md waiter bounded at 600 s); a findings stop writes "Not run: findings stopped capture." under ## Look; emphasis is checked against what the narration names (the misplaced-highlight case needs it); the pack defaults to the stamp's; look.md takes any folder of step-NN.png (#26 must pass every step to --frame) — ADR? no
 - #34: renders shared per test file by script text; the layout read-back test keeps full capture (it compares MP4 bytes); test files run 4 at a time (no shared paths or ports) — ADR? no
 - #33: slot marks (fog) are not measured; only ring marks are exempt from their own contents and edges; a crossing counts any node (goal included); ELK componentComponent spacing = node_gap_F; page contract adds `data-mark` and edge from/to; pencil card corner mark sits d/2 inside the corner — ADR? yes (#31: page contract, check kinds)
@@ -34,6 +36,7 @@ Sitting (2026-09-30): ADR-0012 (approval stamp), ADR-0013 (the CLI is found with
 - #24 (for the author, at the human run): on the clean Wayfinder script the hand-run look raised steps 7 and 9 (narration not visible: "no one-line gist on screen", "no sessions shown"), and the emphasis-vs-narration rule raised 9 and 11, so criterion 4's clean case ("Nothing to report.") does not hold as the script stands. Either the script's narration changes, or the rule loosens — downstream: none
 
 ## Nits
+- #26: between Emit's strip and a restore the draft has no draft block; gaps are dropped at Emit without mention; a graph edit re-lays out untouched steps but shows only changed frames; exit 2 at Checkpoint 2 unhandled
 - #34: the pencil Wayfinder budget test (< 60 s, ADR-0001) has 2.7× headroom, below the probes' 4×; the player settle loop has ~2.5×
 - #33: crossing tests the goal circle by its bounding box (corner false positives possible); same-row dog-leg routing is reported, not fixed (ADR-0003 defers routing)
 - #33: the check measures mark bounding boxes, so a group corner mark beside a member card corner can be a false positive (circle clears by ~0.46F); measure marks as circles if a real script hits it

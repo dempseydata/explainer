@@ -22,7 +22,7 @@ The script's labels, narration and quotes, `review.md`, the keyframes and the vi
 ## 1. Script and pack
 
 - **Script:** the one the author names, else `find . -path '*/explainers/*/script.yaml' -not -path '*/node_modules/*'`: offer the only one, or ask which. It sits at `<root>/explainers/<slug>/script.yaml`; a slug is lowercase letters, digits and hyphens only.
-- **Pack:** the one the author names; it must be listed by `cd "$CLI/packs" && ls */pack.json | cut -d/ -f1`. Otherwise propose the stamp's pack, or ask from that list.
+- **Pack:** the one the author names; it must be listed by `(cd "$CLI/packs" && ls */pack.json | cut -d/ -f1)` (in a subshell, so the working directory stays put). Otherwise propose the stamp's pack, or ask from that list.
 
 Renders go to `<out>` = `<root>/local-data/<slug>/render/<pack>`.
 
