@@ -44,6 +44,7 @@ A step's actions play in the order listed. Each starts when the previous one's a
 - **Invented instance labels cannot be cited.** "Grill: scope" appears in no source, so the example labels its tickets by type. This is a rule for the scripting skill, not the schema.
 - **Typographic folding is required, not cosmetic.** The Latent Space extract uses curly apostrophes, so a quote typed with a straight one failed.
 - **The example survives.** `script.yaml` becomes M1's hand-written example and M6's baseline for "an equivalent script". The prototype checker dies; M1 builds the validator test-first in Node. M1 vendors the pinned `SKILL.md` under `examples/wayfinder/sources/` with its MIT notice.
+  *Amended by [#15](https://github.com/dempseydata/explainer/issues/15):* the example sits where #8 and ADR-0005 put any script. The script is `explainers/wayfinder/script.yaml`, and the vendored `SKILL.md` and its `LICENSE` are in `explainers/wayfinder/sources/`.
 
 ## Considered options
 

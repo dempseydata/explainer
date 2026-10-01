@@ -101,7 +101,7 @@ Show the packs side by side: a table with one column per pack, its `graph.png` p
 
 ## 5. Sequencing
 
-Propose the steps in reveal order, one decision per turn. A step has at most 3 actions, played in order: `{reveal: [ids]}`, `{hide: [ids]}`, `{set_state: {target: [ids], state: <declared>}}`, `{highlight: id}`, `{focus: id}`, `{annotate: {target: id, text: '…'}}` (≤ 30 characters); then `narration`, `duration_s` and `cite`. Every declared element is revealed by some step. Keep the total near `draft.target_s`.
+Propose the steps in reveal order, one decision per turn. A step has at most 3 actions, played in order: `{reveal: [ids]}`, `{hide: [ids]}`, `{set_state: {target: [ids], state: <declared>}}`, `{highlight: id}`, `{annotate: {target: id, text: '…'}}` (≤ 30 characters); then `narration`, `duration_s` and `cite`. Every declared element is revealed by some step. Keep the total near `draft.target_s`.
 
 Every narration claim carries its own quote: a line making two claims cites two. Annotation text is supported by its step's cites. The grounding rules above apply; an unsupported claim is a gap.
 

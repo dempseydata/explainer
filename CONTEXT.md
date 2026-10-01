@@ -45,7 +45,7 @@ A claim the author wants that no source supports, held as an open question in th
 _Avoid_: TODO, missing citation
 
 **Finding**:
-Something the pre-capture checks report against one render: a label under the x-height floor, or an overlap. A finding stops capture unless the author accepts it; it is never fixed by the renderer.
+Something the pre-capture checks report against one render. It is one of four kinds: a label under the x-height floor (`x-height`); an overlap, a state mark's included (`overlap`); a caption that wraps past two lines (`caption`); or an edge that passes through a node other than its two ends (`crossing`). A finding stops capture unless the author accepts it; it is never fixed by the renderer.
 _Avoid_: warning, error, issue
 
 **Look**:

@@ -20,6 +20,8 @@ docs/ CONTEXT.md                               the record: docs/adr, ideation, d
 
 **The skills run the CLI from inside the plugin**, at `<skill-dir>/../../cli/cli.js`, never from PATH. On first use, and again after a plugin update replaces the copy, a skill finds the CLI's dependencies or Chromium missing, installs them into the plugin copy, and says so in one line.
 
+*Amended by ADR-0013:* a skill finds the CLI with `cd -P`, so the symlink route resolves too, and bootstraps it with `cli/setup.sh`. Chromium goes into Playwright's shared cache, not the plugin copy.
+
 ## Consequences
 
 - **A plugin install is the whole install**, apart from the system tools: Node, pandoc and ffmpeg.

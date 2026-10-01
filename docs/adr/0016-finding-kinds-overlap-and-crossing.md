@@ -8,6 +8,7 @@ The check pass reports findings with a `check` of `x-height`, `overlap` or `capt
 
 - A **state mark** that overlaps another element is an `overlap`, and its message names the mark.
 - An **edge** that passes through a card other than its two ends is a new kind, `crossing`.
+  *Amended by ADR-0019:* any node counts, a goal circle included, measured by its outline's bounding box.
 
 ## Consequences
 

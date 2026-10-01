@@ -8,12 +8,15 @@ A story laid out by ELK alone runs about 5:1. Wayfinder's end frame binds on wid
 
 *Amended by ADR-0007:* the area layout fills is the frame above the pack's caption band, not the whole frame.
 
+*Amended by [#19](https://github.com/dempseydata/explainer/issues/19):* the estimate is superseded by what was built. On Wayfinder both packs pack the map's fog patches as `r1` above `r2 r3`. In the standard pack, F goes from 15.57 px in one row to 22.08 px (+42 %). In pencil it goes from 14.02 px to 17.61 px (+26 %). One row would put both packs under the 16 px floor.
+
 ## Consequences
 
 - **Layout is a pure function of script and pack.** `layout.json` is written for the checks and for debugging, and never read back. The brief's hand-adjust-and-lock is dropped: the file lived in gitignored `out/`, and any change of label, node or pack invalidates its coordinates. A layout override, if one is ever needed, belongs in the script, where it is versioned.
 - **The x-height floor is a minimum, not a target.** A ceiling of about 2× the floor stops small scripts rendering slide-title labels. Both are single constants in rendered pixels, the same for every face. Labels are measured in the pack's face in the headless Chromium that capture already launches.
 - **A row breaks only where no edge crosses the break.** elkjs cannot route edges between fixed positions, so a script whose sibling groups are connected gets fewer break points, and in the limit one row.
 - **Sibling order is derived from the script:** first reveal, then first state change, then declaration order. The fog clears in reading order however the author declares the patches.
+  *Amended by [#19](https://github.com/dempseydata/explainer/issues/19):* siblings are compared on the step that first reveals them, then on each step that sets their state, in turn, then by declaration order. A sibling with a further state change sorts before one without. Taken literally, the first state change alone ties Wayfinder's fog patches, which are all fogged in step 1, and falls back to declaration order. The later steps that clear them give reading order.
 - **The transient band stays.** Root-level nodes are placed by ELK, so the session/subagent column (about 14 % of the width) is empty in Wayfinder's end frame. That is the price of ADR-0002's fixed positions.
 
 ## Considered options
